@@ -6,16 +6,23 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write ."
   },
   "dependencies": {
     "expo": "~54.0.33",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "styled-components": "^6.4.1",
+    "zustand": "^5.0.13"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.15",
     "@types/react": "~19.1.0",
+    "@types/styled-components": "^5.1.36",
     "typescript": "~5.9.2"
   },
   "private": true
