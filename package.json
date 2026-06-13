@@ -12,7 +12,8 @@
     "format": "biome format --write .",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "prepare": "husky"
   },
   "dependencies": {
     "expo": "~54.0.33",
@@ -27,6 +28,7 @@
     "@types/react": "~19.1.0",
     "@types/styled-components": "^5.1.36",
     "@vitest/coverage-v8": "^4.1.8",
+    "husky": "^9.1.7",
     "typescript": "~6.0.3",
     "vitest": "^4.1.8"
   },

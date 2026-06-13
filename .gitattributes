@@ -1,0 +1,2 @@
+# husky 훅은 sh로 실행되므로 항상 LF 줄바꿈을 유지해야 함 (CRLF 변환 방지)
+.husky/** text eol=lf

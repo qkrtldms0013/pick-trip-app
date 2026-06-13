@@ -1,0 +1,19 @@
+commit_msg=$(head -n1 "$1")
+
+# git-convention: <type>(optional scope): <title>
+pattern='^(feat|fix|docs|style|refactor|chore|perf|ci|release)(\(.+\))?: .+'
+
+if ! printf '%s' "$commit_msg" | grep -qE "$pattern"; then
+  echo ""
+  echo "❌ 커밋 메시지 형식이 git-convention에 맞지 않습니다."
+  echo ""
+  echo "   형식: <type>(optional scope): <title>"
+  echo "   type: feat | fix | docs | style | refactor | chore | perf | ci | release"
+  echo ""
+  echo "   예) feat: 여행 일정 생성 기능 추가"
+  echo "   예) fix(auth): 로그인 토큰 만료 오류 수정"
+  echo ""
+  echo "   입력한 메시지: $commit_msg"
+  echo ""
+  exit 1
+fi
