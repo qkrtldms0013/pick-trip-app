@@ -87,13 +87,13 @@
 
 - All team members should not commit directly to `main`;  
   instead, they should create a work branch to perform their tasks.
-- Branch names must follow the following format:
-  - New features: `feat/<feature-name>` (e.g., `feat/user-profile-api`)
-  - Refactoring: `refactor/<refactoring-name>` (e.g., `refactor/auth-module`)
-  - Bug fixes: `bugfix/<issue-name>` (e.g., `bugfix/login-timeout`)
-  - Hot fixes: `hotfix/<issue-name>` (e.g., `hotfix/crash-on-launch`)
-- Names should be in lowercase and separated by hyphens (`-`).  
-  If there is an issue number, add it at the end in the format `-issue-number`.
+- Branch names must follow the format `<type>/<issue_number>`:
+  - New features: `feat/<issue_number>` (e.g., `feat/12`)
+  - Refactoring: `refactor/<issue_number>` (e.g., `refactor/12`)
+  - Bug fixes: `bugfix/<issue_number>` (e.g., `bugfix/12`)
+  - Hot fixes: `hotfix/<issue_number>` (e.g., `hotfix/12`)
+- The issue number is the core identifier of the branch name.  
+  Always create a branch from the corresponding issue so that work and issues map 1:1.
 
 > `hotfix`는 `main` 브랜치의 긴급 버그를 수정할 때 사용한다. 수정 후 `main`으로 즉시 머지한다.
 
