@@ -17,13 +17,13 @@
   "dependencies": {
     "expo": "~54.0.33",
     "expo-status-bar": "~56.0.4",
-    "react": "19.1.0",
-    "react-native": "0.81.5",
+    "react": "19.2.7",
+    "react-native": "0.86.0",
     "styled-components": "^6.4.1",
     "zustand": "^5.0.13"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.15",
+    "@biomejs/biome": "2.5.0",
     "@types/react": "~19.1.0",
     "@types/styled-components": "^5.1.36",
     "@vitest/coverage-v8": "^4.1.8",
