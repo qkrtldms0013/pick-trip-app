@@ -3,11 +3,11 @@ import { SafeAreaView, ScrollView, Text, TouchableOpacity, View } from 'react-na
 import styled from 'styled-components';
 import { CompanionCard } from '../components/molecules/CompanionCard';
 import { COLORS } from '../constants/colors';
-import { COMPANIONS } from '../constants/companions';
-import type { Companion, CompanionType } from '../types/companion';
+import { COMPANIONS, STYLE_OPTIONS } from '../constants/companions';
+import type { CompanionType, StylePreference } from '../types/companion';
 
 interface CompanionSelectScreenProps {
-  onContinue: (companions: CompanionType[]) => void;
+  onContinue: (companion: CompanionType, stylePrefs: StylePreference[]) => void;
 }
 
 const ScreenContainer = styled(SafeAreaView)`
@@ -33,15 +33,49 @@ const Subtitle = styled(Text)`
   margin-top: 6px;
 `;
 
-const GridContent = styled(View)`
+const CompanionList = styled(View)`
   padding-horizontal: 20px;
-  gap: 12px;
+  gap: 10px;
   margin-top: 8px;
 `;
 
-const Row = styled(View)`
+const StyleSection = styled(View)`
+  margin-top: 32px;
+  padding-horizontal: 20px;
+`;
+
+const StyleTitle = styled(Text)`
+  font-size: 16px;
+  font-weight: 600;
+  color: ${COLORS.gray900};
+`;
+
+const StyleSubtitle = styled(Text)`
+  font-size: 13px;
+  color: ${COLORS.gray500};
+  margin-top: 4px;
+  margin-bottom: 14px;
+`;
+
+const ChipRow = styled(View)`
   flex-direction: row;
-  gap: 12px;
+  flex-wrap: wrap;
+  gap: 8px;
+`;
+
+const StyleChip = styled(TouchableOpacity)<{ $active: boolean }>`
+  padding-vertical: 10px;
+  padding-horizontal: 16px;
+  border-radius: 100px;
+  border-width: 1.5px;
+  background-color: ${({ $active }) => ($active ? COLORS.amber50 : COLORS.white)};
+  border-color: ${({ $active }) => ($active ? COLORS.amber500 : COLORS.gray200)};
+`;
+
+const StyleChipLabel = styled(Text)<{ $active: boolean }>`
+  font-size: 14px;
+  font-weight: 500;
+  color: ${({ $active }) => ($active ? COLORS.amber700 : COLORS.gray700)};
 `;
 
 const BottomBar = styled(View)`
@@ -55,63 +89,87 @@ const BottomBar = styled(View)`
   background-color: ${COLORS.white};
 `;
 
-const CTAButton = styled(TouchableOpacity)`
-  background-color: ${COLORS.amber500};
+const CTAButton = styled(TouchableOpacity)<{ $disabled: boolean }>`
+  background-color: ${({ $disabled }) => ($disabled ? COLORS.gray200 : COLORS.amber500)};
   border-radius: 12px;
   padding-vertical: 14px;
   align-items: center;
 `;
 
-const CTALabel = styled(Text)`
-  color: ${COLORS.white};
+const CTALabel = styled(Text)<{ $disabled: boolean }>`
+  color: ${({ $disabled }) => ($disabled ? COLORS.gray400 : COLORS.white)};
   font-size: 16px;
   font-weight: 500;
 `;
 
-const COMPANION_PAIRS = COMPANIONS.reduce<Companion[][]>((pairs, item, i) => {
-  if (i % 2 === 0) pairs.push([item]);
-  else pairs[pairs.length - 1].push(item);
-  return pairs;
-}, []);
+const HelperText = styled(Text)`
+  font-size: 12px;
+  color: ${COLORS.gray400};
+  text-align: center;
+  margin-top: 8px;
+`;
 
 export function CompanionSelectScreen({ onContinue }: CompanionSelectScreenProps) {
-  const [selectedIds, setSelectedIds] = useState<CompanionType[]>([]);
+  const [companion, setCompanion] = useState<CompanionType | null>(null);
+  const [stylePrefs, setStylePrefs] = useState<StylePreference[]>([]);
 
-  const handleToggle = (id: CompanionType) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  const toggleStyle = (id: StylePreference) => {
+    setStylePrefs((prev) => (prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]));
   };
+
+  const ready = companion !== null;
 
   return (
     <ScreenContainer>
-      <ScrollView contentContainerStyle={{ paddingBottom: 120 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 140 }}>
         <Header>
           <Title>누구와 함께 가시나요?</Title>
-          <Subtitle>동행 조건을 선택하세요</Subtitle>
+          <Subtitle>취향에 딱 맞는 여행 콘텐츠를 골라서 보여드릴게요</Subtitle>
         </Header>
-        <GridContent>
-          {COMPANION_PAIRS.map((pair) => (
-            <Row key={pair[0].id}>
-              {pair.map((companion) => (
-                <CompanionCard
-                  key={companion.id}
-                  companion={companion}
-                  selected={selectedIds.includes(companion.id)}
-                  onPress={() => handleToggle(companion.id)}
-                />
-              ))}
-              {pair.length === 1 && <View style={{ flex: 1 }} />}
-            </Row>
+        <CompanionList>
+          {COMPANIONS.map((item) => (
+            <CompanionCard
+              key={item.id}
+              companion={item}
+              selected={companion === item.id}
+              onPress={() => setCompanion(item.id)}
+            />
           ))}
-        </GridContent>
+        </CompanionList>
+
+        <StyleSection>
+          <StyleTitle>어떤 여행을 선호하세요?</StyleTitle>
+          <StyleSubtitle>여러 개 골라도 좋아요 (선택 사항)</StyleSubtitle>
+          <ChipRow>
+            {STYLE_OPTIONS.map((option) => (
+              <StyleChip
+                key={option.id}
+                $active={stylePrefs.includes(option.id)}
+                onPress={() => toggleStyle(option.id)}
+                activeOpacity={0.8}
+              >
+                <StyleChipLabel $active={stylePrefs.includes(option.id)}>
+                  {option.label}
+                </StyleChipLabel>
+              </StyleChip>
+            ))}
+          </ChipRow>
+        </StyleSection>
       </ScrollView>
 
-      {selectedIds.length > 0 && (
-        <BottomBar>
-          <CTAButton onPress={() => onContinue(selectedIds)} activeOpacity={0.8}>
-            <CTALabel>여행 준비 완료!</CTALabel>
-          </CTAButton>
-        </BottomBar>
-      )}
+      <BottomBar>
+        <CTAButton
+          $disabled={!ready}
+          disabled={!ready}
+          onPress={() => {
+            if (companion) onContinue(companion, stylePrefs);
+          }}
+          activeOpacity={ready ? 0.8 : 1}
+        >
+          <CTALabel $disabled={!ready}>여행 준비 완료!</CTALabel>
+        </CTAButton>
+        {!ready && <HelperText>동행을 선택하면 시작할 수 있어요</HelperText>}
+      </BottomBar>
     </ScreenContainer>
   );
 }

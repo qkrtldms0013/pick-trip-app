@@ -9,6 +9,8 @@ import type { ContentCategory } from '../types/content';
 
 interface ContentExploreScreenProps {
   selectedRegions: string[];
+  selectedIds: string[];
+  onToggle: (contentId: string) => void;
   onContinue: (selectedIds: string[]) => void;
 }
 
@@ -93,10 +95,14 @@ const CTALabel = styled(Text)`
   font-weight: 500;
 `;
 
-export function ContentExploreScreen({ selectedRegions, onContinue }: ContentExploreScreenProps) {
+export function ContentExploreScreen({
+  selectedRegions,
+  selectedIds,
+  onToggle,
+  onContinue,
+}: ContentExploreScreenProps) {
   const [selectedCategory, setSelectedCategory] = useState<ContentCategory | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const filtered = useMemo(() => {
     return CONTENTS.filter((c) => {
@@ -106,12 +112,6 @@ export function ContentExploreScreen({ selectedRegions, onContinue }: ContentExp
       return inRegion && inCategory && inSearch;
     });
   }, [selectedRegions, selectedCategory, searchQuery]);
-
-  const handleToggle = (contentId: string) => {
-    setSelectedIds((prev) =>
-      prev.includes(contentId) ? prev.filter((id) => id !== contentId) : [...prev, contentId],
-    );
-  };
 
   return (
     <ScreenContainer>
@@ -143,7 +143,7 @@ export function ContentExploreScreen({ selectedRegions, onContinue }: ContentExp
                 key={content.id}
                 content={content}
                 selected={selectedIds.includes(content.id)}
-                onPress={() => handleToggle(content.id)}
+                onPress={() => onToggle(content.id)}
               />
             ))
           )}

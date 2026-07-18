@@ -1,7 +1,6 @@
-export type CompanionType =
-  | 'with_kids'
-  | 'with_parents'
-  | 'whole_family'
+export type CompanionType = 'with_kids' | 'with_parents' | 'whole_family';
+
+export type StylePreference =
   | 'less_walking'
   | 'nature_focused'
   | 'experience_focused'
@@ -13,4 +12,9 @@ export interface Companion {
   label: string;
   emoji: string;
   description: string;
+}
+
+export interface StyleOption {
+  id: StylePreference;
+  label: string;
 }
