@@ -325,6 +325,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // 복수 선택(체크박스 방식) 지역 토글 — 프로필의 "선호 지역"과 탐색 화면의 지역 칩이
+  // 같은 selectedRegions를 공유하며 이 함수를 그대로 쓴다. 둘 중 어디서 바꾸든 FOR YOU
+  // 추천·바구니가 같은 기준으로 맞춰진다.
   const handleToggleRegion = (regionId: string) => {
     const isSelecting = !selectedRegions.includes(regionId);
     // 담아둔 콘텐츠는 특정 지역에 속해있으므로, 새 지역을 고르면 이전 지역 것과 섞이지

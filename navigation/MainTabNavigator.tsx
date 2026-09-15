@@ -95,13 +95,20 @@ function HomeTabScreen() {
 }
 
 function ExploreTabScreen() {
-  const { selectedRegions, selectedIds, handleToggleContent, favoriteIds, handleToggleFavorite } =
-    useAppState();
+  const {
+    selectedRegions,
+    handleToggleRegion,
+    selectedIds,
+    handleToggleContent,
+    favoriteIds,
+    handleToggleFavorite,
+  } = useAppState();
   const navigation = useNavigation<StackNavigationProp<RootStackParamList>>();
 
   return (
     <ContentExploreScreen
       selectedRegions={selectedRegions}
+      onToggleRegion={handleToggleRegion}
       selectedIds={selectedIds}
       onToggle={handleToggleContent}
       onContinue={() => navigation.navigate('Priority')}
