@@ -578,20 +578,26 @@ export function HomeContent({
   const focusRegionId = selectedRegions[0] ?? REGIONS[0].id;
   const focusRegion = REGIONS.find((r) => r.id === focusRegionId);
 
-  const { contents } = useContents([focusRegionId]);
+  // FOR YOU 추천은 "어디부터 둘러볼까요?" 카드의 단일 focusRegionId가 아니라, 선호 지역
+  // 전체(selectedRegions)를 기준으로 조회한다 — 지역을 2개 이상 골랐을 때 첫 지역 콘텐츠만
+  // 나오거나, 하나도 안 골랐을 때 기본값(REGIONS[0])이 섞여 들어오는 걸 막는다. 선택이
+  // 없으면 useContents가 빈 배열을 그대로 받아 조회를 쉬고(enabled: false), 아래
+  // recommendations.length > 0 가드로 섹션 자체가 숨는다.
+  const { contents } = useContents(selectedRegions);
 
   // 지역 선택이 바뀔 때마다(같은 지역을 다시 골라도) 추천 콘텐츠를 새로 섞는다.
   // contents는 useContents 안에서 매 렌더마다 새 배열로 만들어지므로, 그 자체를 의존성으로
   // 쓰면 렌더될 때마다 섞여서 스크롤 중에도 순서가 계속 바뀐다 — id 목록을 문자열로 묶어 비교한다.
   const contentIdsKey = contents.map((c) => c.id).join(',');
   const [shuffleSeed, setShuffleSeed] = useState(0);
-  const prevFocusRegionId = useRef<string | null>(null);
+  const selectedRegionsKey = selectedRegions.join(',');
+  const prevSelectedRegionsKey = useRef<string | null>(null);
   useEffect(() => {
-    if (prevFocusRegionId.current !== focusRegionId) {
-      prevFocusRegionId.current = focusRegionId;
+    if (prevSelectedRegionsKey.current !== selectedRegionsKey) {
+      prevSelectedRegionsKey.current = selectedRegionsKey;
       setShuffleSeed((seed) => seed + 1);
     }
-  }, [focusRegionId]);
+  }, [selectedRegionsKey]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: contentIdsKey/shuffleSeed가 바뀔 때만 다시 섞으면 되고, contents 참조 자체는 매 렌더 새로 생겨 의존성에서 뺀다
   const shuffledContents = useMemo(() => shuffle(contents), [contentIdsKey, shuffleSeed]);
   const recommendations = shuffledContents.filter((c) => !selectedIds.includes(c.id)).slice(0, 6);
@@ -740,7 +746,8 @@ export function HomeContent({
                 <SectionTitleRow>
                   <SectionTitle>추천 콘텐츠</SectionTitle>
                   <SectionMeta>
-                    {focusRegion?.name} · {recommendations.length}곳
+                    {regionNames.length > 0 ? regionNames.join(', ') : focusRegion?.name} ·{' '}
+                    {recommendations.length}곳
                   </SectionMeta>
                 </SectionTitleRow>
               </View>
