@@ -131,7 +131,7 @@ export function SavedTripCard({
   onDelete,
   onShare,
 }: SavedTripCardProps) {
-  const badge = getTripBadge(item.travelDate);
+  const badge = getTripBadge(item.travelDate, item.duration);
 
   return (
     <Card>

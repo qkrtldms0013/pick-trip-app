@@ -103,10 +103,10 @@ export function SavedTripsScreen({
   // 여행일이 없는 일정(드물지만 travelDate 미지정)은 지난 여행이라고 확정할 근거가 없어
   // "다가오는 여행" 쪽에 넣는다.
   const upcomingTrips = itineraryHistory.filter(
-    (item) => getTripBadge(item.travelDate)?.tone !== 'past',
+    (item) => getTripBadge(item.travelDate, item.duration)?.tone !== 'past',
   );
   const pastTrips = itineraryHistory.filter(
-    (item) => getTripBadge(item.travelDate)?.tone === 'past',
+    (item) => getTripBadge(item.travelDate, item.duration)?.tone === 'past',
   );
   const visibleTrips = activeTab === 'upcoming' ? upcomingTrips : pastTrips;
   const tabLabel = activeTab === 'upcoming' ? '다가오는 여행' : '지난 여행';
