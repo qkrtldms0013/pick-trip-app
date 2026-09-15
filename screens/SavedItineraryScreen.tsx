@@ -1,4 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -427,6 +428,7 @@ const PrimaryButtonLabel = styled(Text)`
 // 이 화면 자체를 편집 모드로 바꿔서, 같은 화면 안에서 장소 추가·삭제·순서 변경을 하고
 // 바로 저장한다.
 export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScreenProps) {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
   const [plan, setPlan] = useState<ItineraryPlan | null>(null);
   const [stops, setStops] = useState<ItineraryStop[]>([]);
@@ -539,6 +541,12 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
       setIsEditing(false);
       setExpandedDay(null);
       setEditSaveState('idle');
+      // "저장한 여행" 카드 사진은 첫 방문지 콘텐츠를 기준으로 캐시돼 있다(useItineraryFirstStopPhotos).
+      // 방문지 순서를 바꾸거나 첫 방문지를 지웠는데 이 캐시를 그대로 두면, 홈은 루트 스택
+      // 아래에 계속 마운트돼 있어 refetchOnMount도 안 타서 gc되거나 앱을 재시작하기 전까지
+      // 예전 첫 방문지의 사진이 계속 보인다 — 저장 성공 시점에 직접 무효화해 새 첫 방문지
+      // 기준으로 다시 가져오게 한다.
+      queryClient.invalidateQueries({ queryKey: ['itinerary-first-stop', itineraryId] });
       onSaved?.({
         itineraryId,
         title: saved.title,
