@@ -342,7 +342,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   // 바꾸고(기존 다중 선택은 대체됨), 다른 지역 바구니 아이템과 섞이지 않도록 handleToggleRegion과
   // 같은 규칙으로 바구니를 비운다.
   const handleSelectRegion = (regionId: string) => {
-    if (selectedRegions.length === 1 && selectedRegions[0] === regionId) return;
+    if (selectedRegions.includes(regionId)) return;
     if (basketItems.length > 0) {
       clearItems();
     }
