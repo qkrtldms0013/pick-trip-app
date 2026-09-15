@@ -31,8 +31,17 @@ export function useItineraryRoutes(
       // null이 반환되는데, 이 null이 queryKey(day+contentId 목록)에 고정 캐시돼서
       // 이후 contentById가 채워져도 재조회가 안 됐다(콘텐츠가 도착해도 queryKey가 그대로라
       // react-query가 "이미 답이 있다"고 판단). 그래서 항상 STRAIGHT 폴백만 보였다.
-      // 이 날짜에 속한 모든 콘텐츠가 로드된 뒤에만 쿼리를 시작해 이 문제를 막는다.
-      enabled: dayStops.length > 1 && dayStops.every((stop) => contentById[stop.contentId] != null),
+      //
+      // 그렇다고 "이 날짜의 모든 콘텐츠가 로드돼야" 시작하게 하면 또 다른 문제가 생긴다 —
+      // 저장된 일정이 서버에서 이미 삭제된 콘텐츠를 참조하면 그 콘텐츠는 영원히 로드되지
+      // 않아서(404) every()가 영원히 false가 되고, 나머지가 다 로드돼 있어도 그 날짜는
+      // ROAD 조회를 영영 시작도 못 한다. getDayRoute는 이미 좌표를 모르는 콘텐츠를 걸러내고
+      // 남은 걸로 경로를 구하므로, 여기서도 "로드된 정류지가 2개 이상"이면 충분하다.
+      enabled: dayStops.filter((stop) => contentById[stop.contentId] != null).length > 1,
+      // 기본값(staleTime: 0)이면 화면을 잠깐 나갔다 들어오기만 해도(리마운트) 모든 일차를
+      // 처음부터 다시 조회한다. 실제 도로 상황은 몇 분 안에 바뀌지 않으니, 그 안에서는
+      // 캐시된 값을 그대로 믿고 재조회를 건너뛴다.
+      staleTime: 5 * 60 * 1000,
     })),
   });
 

@@ -40,9 +40,15 @@ type DirectionsResponseBody =
   | { ok: true; route: RouteResultResponse }
   | { ok: false; error: string };
 
-// 경로를 못 찾음/카카오 오류/points 규칙 위반 모두 예외가 아니라 { ok: false }로 200 응답이
-// 온다(웹 쪽 계약). 네트워크 자체가 실패한 경우까지 포함해서, 여기서는 모든 실패를 null로
-// 뭉뚱그려 호출부가 STRAIGHT 폴백만 신경 쓰면 되게 한다.
+// 좌표 2곳 미만이거나 한도(60) 초과는 애초에 호출할 이유가 없는(2곳 미만) 혹은 웹이 항상
+// 400으로 답할(60 초과) 경우라 재시도로 해결되지 않는다 — 에러 없이 null을 반환해 STRAIGHT
+// 폴백으로 조용히 넘어간다.
+//
+// 반면 타임아웃/네트워크 오류/{ ok: false }(카카오가 경로를 못 찾음 등, 웹 쪽 계약으로 예외가
+// 아니라 200 응답으로 옴)는 "이번 시도가 실패했다"는 뜻이라 에러를 던진다. 예전엔 이 경우도
+// null로 뭉개서 반환했는데, 그러면 getDayRoute가 에러 없이 끝난 것으로 보여 react-query가
+// 실패를 성공(STRAIGHT)으로 캐시해버려 재시도가 영영 안 됐다 — 던져서 호출부가 실패를
+// 실패로 인식하고 재시도하게 한다.
 async function fetchDirections(points: DirectionsPoint[]): Promise<RouteResultResponse | null> {
   if (points.length < 2 || points.length > MAX_POINTS) return null;
 
@@ -52,11 +58,13 @@ async function fetchDirections(points: DirectionsPoint[]): Promise<RouteResultRe
       { points },
       { timeout: 8000, headers: { 'Content-Type': 'application/json' } },
     );
-    return data.ok ? data.route : null;
+    if (data.ok) return data.route;
+    throw new Error(`[routeDistanceService] 실도로 거리 조회 실패: ${data.error}`);
   } catch (error) {
-    // 원인을 남기지 않으면 웹 서버가 죽은 건지 네트워크 문제인지 구분할 수 없다.
+    // 원인을 남기지 않으면 웹 서버가 죽은 건지 네트워크 문제인지 구분할 수 없다. 로그만
+    // 남기고 그대로 다시 던져(rethrow) getDayRoute → react-query가 실패로 인식하게 한다.
     console.warn('[routeDistanceService] 실도로 거리 조회 실패', error);
-    return null;
+    throw error;
   }
 }
 
@@ -95,8 +103,10 @@ export async function getDayRoute(
     }
   }
 
-  // 실도로 거리를 못 구했으면(웹 서버 문제, 카카오가 경로를 못 찾음, 좌표 2곳 미만 등)
-  // 직선거리로 폴백한다 — 컴포넌트 쪽에서 distanceBasis: STRAIGHT로 "추정치" 라벨을 붙인다.
+  // 여기 도달하는 경우는 좌표 2곳 미만, 혹은 응답을 받긴 했는데 형태가 안 맞는 경우뿐이다
+  // (웹 서버 문제·카카오가 경로를 못 찾음 등 진짜 실패는 fetchDirections가 던져서 이 함수
+  // 자체가 reject되므로 여기까지 안 온다) — 직선거리로 폴백한다. 컴포넌트 쪽에서
+  // distanceBasis: STRAIGHT로 "추정치" 라벨을 붙인다.
   const hops = computeDayHops(dayStops, contentById);
   if (hops.length === 0) return null;
 
