@@ -3,6 +3,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
+import { ItineraryDayDistanceList } from '../components/molecules/ItineraryDayDistanceList';
+import { ItineraryRouteMap } from '../components/molecules/ItineraryRouteMap';
 import { ItineraryTitleModal } from '../components/molecules/ItineraryTitleModal';
 import {
   DEFAULT_STEP_INTERVAL_MS,
@@ -14,6 +16,7 @@ import { REGIONS } from '../constants/regions';
 import { FONT } from '../constants/typography';
 import { useContents } from '../hooks/useContents';
 import { useContentsByIds } from '../hooks/useContentsByIds';
+import { useItineraryRoutes } from '../hooks/useItineraryRoutes';
 import { toErrorMessage } from '../services/apiError';
 import { syncBasketToServer } from '../services/basketService';
 import { generateItinerary } from '../services/generateItinerary';
@@ -29,6 +32,7 @@ import { createShareLink } from '../services/shareService';
 import type { CompanionType, StylePreference } from '../types/companion';
 import type { ItineraryStop } from '../types/itinerary';
 import type { Priority } from '../types/priority';
+import { computeDayHops, sumDistanceKm } from '../utils/geoDistance';
 import { addDays, formatDateRange, formatDayDate, fromDateString } from '../utils/tripDate';
 
 interface ItineraryResultScreenProps {
@@ -241,6 +245,20 @@ const TimeConnector = styled(View)`
   width: 2px;
   background-color: ${COLORS.gray200};
   margin-top: 4px;
+`;
+
+// TimeConnector 위에 겹쳐 그리는 구간 거리 라벨. 콘텐츠1→콘텐츠2 사이 거리를
+// 연결선 세로 중앙에 얹어서 보여준다. RN의 transform은 퍼센트 값을 못 받아서
+// (translateY(-50%) 같은 건 파싱 자체가 실패한다), 폰트 크기 기준 고정 px로 절반만큼 올린다.
+const HopDistanceLabel = styled(Text)`
+  position: absolute;
+  top: 50%;
+  margin-top: -6px;
+  width: 52px;
+  text-align: center;
+  font-size: 10px;
+  font-family: ${FONT.medium};
+  color: ${COLORS.gray400};
 `;
 
 const StopCard = styled(View)`
@@ -469,6 +487,7 @@ export function ItineraryResultScreen({
   const [expandedDay, setExpandedDay] = useState<number | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showSaveModal, setShowSaveModal] = useState(false);
+  const [selectedRouteDay, setSelectedRouteDay] = useState(1);
 
   const runGenerate = async () => {
     setStatus('loading');
@@ -656,9 +675,13 @@ export function ItineraryResultScreen({
   const usedIds = stops.map((s) => s.contentId);
   const candidates = regionContents.filter((c) => !usedIds.includes(c.id));
 
+  // totalDays는 지도·일차 탭(useItineraryRoutes)에도 필요해서, 로딩/에러 조기 return보다
+  // 앞에 둬야 훅 호출 순서가 렌더마다 흔들리지 않는다.
   const planDurationForDays = plan?.duration ?? duration;
   const totalDays =
     planDurationForDays != null ? planDurationForDays + 1 : Math.max(1, ...stops.map((s) => s.day));
+  const { routeByDay } = useItineraryRoutes(stops, contentById, totalDays);
+  const activeRouteDay = Math.min(selectedRouteDay, totalDays);
 
   if (status === 'loading') {
     return (
@@ -695,6 +718,13 @@ export function ItineraryResultScreen({
   const regionName = REGIONS.find((r) => r.id === planRegion)?.name ?? null;
   const dateRange = formatDateRange(planTravelDate, planDuration);
   const dayList = Array.from({ length: totalDays }, (_, i) => i + 1);
+  // 일차별 총거리(routeByDay가 있으면 그 값, 없으면 직선거리)를 다 더한다.
+  const totalTripDistanceKm = dayList.reduce((sum, day) => {
+    const route = routeByDay[day];
+    if (route) return sum + route.totalDistanceKm;
+    const dayStops = stops.filter((stop) => stop.day === day);
+    return sum + sumDistanceKm(computeDayHops(dayStops, contentById));
+  }, 0);
 
   return (
     <ScreenContainer>
@@ -762,6 +792,15 @@ export function ItineraryResultScreen({
         {dayList.map((day) => {
           const dayStops = stops.filter((stop) => stop.day === day);
           const dayDate = planTravelDate ? addDays(fromDateString(planTravelDate), day - 1) : null;
+          // 실도로 거리(routeByDay)가 아직 없으면 좌표로 즉석 계산한 직선거리로 채운다 —
+          // routeDistanceService.ts 상단 TODO 참고.
+          const dayRoute = routeByDay[day];
+          const dayLegs =
+            dayRoute?.legs ??
+            computeDayHops(dayStops, contentById).map((hop) => ({
+              ...hop,
+              durationMinutes: null as number | null,
+            }));
           return (
             <View key={day}>
               <DayHeaderRow>
@@ -777,12 +816,24 @@ export function ItineraryResultScreen({
                 const content = contentById[stop.contentId];
                 const category = content && CATEGORIES.find((c) => c.id === content.category);
                 const accentColor = category?.color ?? COLORS.gray500;
+                // dayLegs를 index로 바로 집으면 안 된다 — 좌표 미상 콘텐츠가 낀 구간은
+                // dayLegs(및 STRAIGHT 폴백인 computeDayHops)에서 건너뛰어져 배열이 압축되므로,
+                // dayStops 위치(index) 기준과 dayLegs 위치 기준이 어긋나 엉뚱한 구간 거리가
+                // 붙을 수 있다. fromContentId로 이 정류지에서 출발하는 구간을 직접 찾는다.
+                const hopToNext = dayLegs.find((leg) => leg.fromContentId === stop.contentId);
                 return (
                   <StopRow key={stop.contentId}>
                     <TimeColumn>
                       <TimeText numberOfLines={1}>{stop.startTime}</TimeText>
                       <TimeDot />
-                      {index < dayStops.length - 1 && <TimeConnector />}
+                      {index < dayStops.length - 1 && (
+                        <>
+                          <TimeConnector />
+                          {hopToNext && (
+                            <HopDistanceLabel>{hopToNext.distanceKm.toFixed(1)}km</HopDistanceLabel>
+                          )}
+                        </>
+                      )}
                     </TimeColumn>
                     <StopCard>
                       {category && (
@@ -839,6 +890,21 @@ export function ItineraryResultScreen({
           );
         })}
 
+        <ItineraryRouteMap
+          stops={stops}
+          contentById={contentById}
+          routeByDay={routeByDay}
+          totalDays={totalDays}
+          selectedDay={activeRouteDay}
+          onSelectDay={setSelectedRouteDay}
+        />
+        <ItineraryDayDistanceList
+          day={activeRouteDay}
+          dayStops={stops.filter((stop) => stop.day === activeRouteDay)}
+          contentById={contentById}
+          route={routeByDay[activeRouteDay] ?? null}
+        />
+
         <StatsCard>
           <StatItem>
             <StatValue>{totalDays}일</StatValue>
@@ -853,6 +919,11 @@ export function ItineraryResultScreen({
           <StatItem>
             <StatValue>{regionName ?? '-'}</StatValue>
             <StatLabel>지역</StatLabel>
+          </StatItem>
+          <StatDivider />
+          <StatItem>
+            <StatValue>{totalTripDistanceKm.toFixed(1)}km</StatValue>
+            <StatLabel>총 이동거리</StatLabel>
           </StatItem>
         </StatsCard>
       </ScrollView>

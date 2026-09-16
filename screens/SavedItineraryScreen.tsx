@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { SkeletonBox } from '../components/atoms/SkeletonBox';
+import { ItineraryDayDistanceList } from '../components/molecules/ItineraryDayDistanceList';
+import { ItineraryRouteMap } from '../components/molecules/ItineraryRouteMap';
 import { ItineraryStopSkeleton } from '../components/molecules/ItineraryStopSkeleton';
 import { ItineraryTitleModal } from '../components/molecules/ItineraryTitleModal';
 import { CATEGORIES } from '../constants/categories';
@@ -12,6 +15,7 @@ import { REGIONS } from '../constants/regions';
 import { FONT } from '../constants/typography';
 import { useContents } from '../hooks/useContents';
 import { useContentsByIds } from '../hooks/useContentsByIds';
+import { useItineraryRoutes } from '../hooks/useItineraryRoutes';
 import { toErrorMessage } from '../services/apiError';
 import type { SavedItinerarySummary } from '../services/itineraryHistoryStorage';
 import {
@@ -23,6 +27,7 @@ import { addStop, moveStop, removeStop } from '../services/scheduleActions';
 import { buildShareText, shareItinerary } from '../services/shareItinerary';
 import { createShareLink } from '../services/shareService';
 import type { ItineraryStop } from '../types/itinerary';
+import { computeDayHops, sumDistanceKm } from '../utils/geoDistance';
 import { addDays, formatDateRange, formatDayDate, fromDateString } from '../utils/tripDate';
 
 interface SavedItineraryScreenProps {
@@ -198,6 +203,20 @@ const TimeConnector = styled(View)`
   width: 2px;
   background-color: ${COLORS.gray200};
   margin-top: 4px;
+`;
+
+// TimeConnector 위에 겹쳐 그리는 구간 거리 라벨. ItineraryResultScreen과 같은 패턴.
+// RN의 transform은 퍼센트 값을 못 받아서(translateY(-50%) 같은 건 파싱 자체가 실패한다),
+// 폰트 크기 기준 고정 px로 절반만큼 올린다.
+const HopDistanceLabel = styled(Text)`
+  position: absolute;
+  top: 50%;
+  margin-top: -6px;
+  width: 52px;
+  text-align: center;
+  font-size: 10px;
+  font-family: ${FONT.medium};
+  color: ${COLORS.gray400};
 `;
 
 const StopCard = styled(View)`
@@ -409,6 +428,7 @@ const PrimaryButtonLabel = styled(Text)`
 // 이 화면 자체를 편집 모드로 바꿔서, 같은 화면 안에서 장소 추가·삭제·순서 변경을 하고
 // 바로 저장한다.
 export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScreenProps) {
+  const queryClient = useQueryClient();
   const [status, setStatus] = useState<'loading' | 'done' | 'error'>('loading');
   const [plan, setPlan] = useState<ItineraryPlan | null>(null);
   const [stops, setStops] = useState<ItineraryStop[]>([]);
@@ -420,6 +440,7 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
 
   const [showTitleModal, setShowTitleModal] = useState(false);
   const [titleSaveState, setTitleSaveState] = useState<'idle' | 'saving'>('idle');
+  const [selectedRouteDay, setSelectedRouteDay] = useState(1);
 
   useEffect(() => {
     let cancelled = false;
@@ -451,13 +472,16 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
   }, [regionContents, stopContents]);
   const candidates = regionContents.filter((c) => !stopIds.includes(c.id));
 
-  // plan이 아직 없으면(로딩 중) 1로 둔다 — 이 값은 그 상태에서 화면에 그려지지 않으므로
-  // 실제로 쓰이진 않는다.
+  // totalDays는 지도·일차 탭(useItineraryRoutes)에도 필요해서, 로딩/에러 조기 return보다
+  // 앞에 둬야 훅 호출 순서가 렌더마다 흔들리지 않는다. plan이 아직 없으면(로딩 중) 1로 둔다 —
+  // 이 값은 그 상태에서 화면에 그려지지 않으므로 실제로 쓰이진 않는다.
   const totalDays = plan
     ? plan.duration != null
       ? plan.duration + 1
       : Math.max(1, ...stops.map((s) => s.day))
     : 1;
+  const { routeByDay } = useItineraryRoutes(stops, contentById, totalDays);
+  const activeRouteDay = Math.min(selectedRouteDay, totalDays);
 
   // updateItineraryPlan은 PATCH로 일정 전체(제목 포함)를 다시 보내는 방식이라, 이름만 바꿀 때도
   // days[].items의 title을 채워야 한다 — 편집 저장(handleSaveEdits)과 이름 저장(handleConfirmTitle)
@@ -517,6 +541,12 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
       setIsEditing(false);
       setExpandedDay(null);
       setEditSaveState('idle');
+      // "저장한 여행" 카드 사진은 첫 방문지 콘텐츠를 기준으로 캐시돼 있다(useItineraryFirstStopPhotos).
+      // 방문지 순서를 바꾸거나 첫 방문지를 지웠는데 이 캐시를 그대로 두면, 홈은 루트 스택
+      // 아래에 계속 마운트돼 있어 refetchOnMount도 안 타서 gc되거나 앱을 재시작하기 전까지
+      // 예전 첫 방문지의 사진이 계속 보인다 — 저장 성공 시점에 직접 무효화해 새 첫 방문지
+      // 기준으로 다시 가져오게 한다.
+      queryClient.invalidateQueries({ queryKey: ['itinerary-first-stop', itineraryId] });
       onSaved?.({
         itineraryId,
         title: saved.title,
@@ -597,6 +627,13 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
   const regionName = REGIONS.find((r) => r.id === plan.region)?.name ?? null;
   const dateRange = formatDateRange(plan.travelDate, plan.duration);
   const dayList = Array.from({ length: totalDays }, (_, i) => i + 1);
+  // 일차별 총거리(routeByDay가 있으면 그 값, 없으면 직선거리)를 다 더한다.
+  const totalTripDistanceKm = dayList.reduce((sum, day) => {
+    const route = routeByDay[day];
+    if (route) return sum + route.totalDistanceKm;
+    const dayStops = stops.filter((stop) => stop.day === day);
+    return sum + sumDistanceKm(computeDayHops(dayStops, contentById));
+  }, 0);
 
   return (
     <ScreenContainer>
@@ -656,6 +693,15 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
           const dayDate = plan.travelDate
             ? addDays(fromDateString(plan.travelDate), day - 1)
             : null;
+          // 실도로 거리(routeByDay)가 아직 없으면 좌표로 즉석 계산한 직선거리로 채운다 —
+          // routeDistanceService.ts 상단 TODO 참고.
+          const dayRoute = routeByDay[day];
+          const dayLegs =
+            dayRoute?.legs ??
+            computeDayHops(dayStops, contentById).map((hop) => ({
+              ...hop,
+              durationMinutes: null as number | null,
+            }));
           return (
             <View key={day}>
               <DayHeaderRow>
@@ -671,12 +717,23 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
                 const content = contentById[stop.contentId];
                 const category = content && CATEGORIES.find((c) => c.id === content.category);
                 const accentColor = category?.color ?? COLORS.gray500;
+                // dayLegs를 index로 바로 집으면 안 된다 — ItineraryResultScreen과 같은 이유로,
+                // 좌표 미상 콘텐츠가 낀 구간은 배열에서 빠지며 압축되므로 dayStops 위치 기준과
+                // 어긋난다. fromContentId로 이 정류지에서 출발하는 구간을 직접 찾는다.
+                const hopToNext = dayLegs.find((leg) => leg.fromContentId === stop.contentId);
                 return (
                   <StopRow key={stop.contentId}>
                     <TimeColumn>
                       <TimeText numberOfLines={1}>{stop.startTime}</TimeText>
                       <TimeDot />
-                      {index < dayStops.length - 1 && <TimeConnector />}
+                      {index < dayStops.length - 1 && (
+                        <>
+                          <TimeConnector />
+                          {hopToNext && (
+                            <HopDistanceLabel>{hopToNext.distanceKm.toFixed(1)}km</HopDistanceLabel>
+                          )}
+                        </>
+                      )}
                     </TimeColumn>
                     <StopCard>
                       {category && (
@@ -741,6 +798,21 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
           );
         })}
 
+        <ItineraryRouteMap
+          stops={stops}
+          contentById={contentById}
+          routeByDay={routeByDay}
+          totalDays={totalDays}
+          selectedDay={activeRouteDay}
+          onSelectDay={setSelectedRouteDay}
+        />
+        <ItineraryDayDistanceList
+          day={activeRouteDay}
+          dayStops={stops.filter((stop) => stop.day === activeRouteDay)}
+          contentById={contentById}
+          route={routeByDay[activeRouteDay] ?? null}
+        />
+
         <StatsCard>
           <StatItem>
             <StatValue>{totalDays}일</StatValue>
@@ -755,6 +827,11 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
           <StatItem>
             <StatValue>{regionName ?? '-'}</StatValue>
             <StatLabel>지역</StatLabel>
+          </StatItem>
+          <StatDivider />
+          <StatItem>
+            <StatValue>{totalTripDistanceKm.toFixed(1)}km</StatValue>
+            <StatLabel>총 이동거리</StatLabel>
           </StatItem>
         </StatsCard>
       </ScrollView>

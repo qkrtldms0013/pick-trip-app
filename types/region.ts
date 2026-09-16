@@ -4,4 +4,5 @@ export interface Region {
   tagline: string;
   tags: string[];
   color: string;
+  imageUrl: string;
 }

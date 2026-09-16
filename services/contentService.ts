@@ -1,3 +1,4 @@
+import { applyContentImageOverride } from '../constants/contentImageOverrides';
 import type { Content, ContentCategory } from '../types/content';
 import type { NearbyContentItem, NearbyDistanceBasis } from '../types/nearbyContent';
 import { apiClient } from './apiClient';
@@ -27,7 +28,7 @@ interface ContentListResponse {
 const PAGE_SIZE = 20;
 
 function toContent(item: ContentSummaryResponse): Content {
-  return {
+  return applyContentImageOverride({
     id: item.contentId,
     regionId: item.region.toLowerCase(),
     name: item.title,
@@ -45,7 +46,7 @@ function toContent(item: ContentSummaryResponse): Content {
     parking: null,
     stayDuration: null,
     reservationRequired: null,
-  };
+  });
 }
 
 export interface ContentPage {
@@ -90,7 +91,7 @@ interface ContentDetailResponse {
 }
 
 function toContentFromDetail(item: ContentDetailResponse): Content {
-  return {
+  return applyContentImageOverride({
     id: item.contentId,
     regionId: item.region.toLowerCase(),
     name: item.title,
@@ -107,7 +108,7 @@ function toContentFromDetail(item: ContentDetailResponse): Content {
     parking: item.parking,
     stayDuration: item.stayDuration,
     reservationRequired: item.reservationRequired,
-  };
+  });
 }
 
 export async function fetchContentDetail(contentId: string): Promise<Content> {
@@ -139,11 +140,18 @@ interface NearbyContentResponse {
 }
 
 function toNearbyContentItem(item: NearbyContentItemResponse): NearbyContentItem {
+  // applyContentImageOverride는 Content 쪽 필드명(id/name)을 기준으로 동작해서,
+  // NearbyContentItem의 contentId/title은 잠깐 그 모양으로 바꿔 넣었다 뺀다.
+  const overridden = applyContentImageOverride({
+    id: item.contentId,
+    name: item.title,
+    imageUrl: item.firstImage || null,
+  });
   return {
     contentId: item.contentId,
-    title: item.title,
+    title: overridden.name,
     address: item.address,
-    imageUrl: item.firstImage || null,
+    imageUrl: overridden.imageUrl,
     category: item.category.toLowerCase() as ContentCategory,
     summary: item.summary,
     region: item.region ? item.region.toLowerCase() : null,

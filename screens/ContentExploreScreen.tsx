@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   ScrollView,
@@ -22,6 +22,7 @@ import type { Content, ContentCategory } from '../types/content';
 
 interface ContentExploreScreenProps {
   selectedRegions: string[];
+  onToggleRegion: (regionId: string) => void;
   selectedIds: string[];
   onToggle: (content: Content) => void;
   onContinue: (selectedIds: string[]) => void;
@@ -176,6 +177,7 @@ const SKELETON_COUNT = 4;
 
 export function ContentExploreScreen({
   selectedRegions,
+  onToggleRegion,
   selectedIds,
   onToggle,
   onContinue,
@@ -185,42 +187,16 @@ export function ContentExploreScreen({
 }: ContentExploreScreenProps) {
   const [selectedCategory, setSelectedCategory] = useState<ContentCategory | 'all'>('all');
   const regionIds = REGIONS.map((r) => r.id);
-  // 지역 칩은 복수 선택(체크박스 방식) — "전체" 칩 없이 3개 지역 칩을 모두 선택하면 그 자체가
-  // 전체 보기다. 홈에서 "선호 지역"을 일부만(1~2개) 골랐으면 그 지역들로 시작하고, 안
-  // 골랐거나 전부 골랐으면 3개 지역 전부 선택된 상태로 시작한다. 탐색 화면 안에서는 칩으로
-  // 지역을 자유롭게 바꿀 수 있어야 하므로, 콘텐츠 자체는(아래 useContents) 항상 3개 지역
-  // 전부 불러온다 — 그래야 칩을 바꿔도 다시 불러오는 지연 없이 바로 걸러진다.
-  const [selectedRegionIds, setSelectedRegionIds] = useState<string[]>(
-    selectedRegions.length > 0 && selectedRegions.length < regionIds.length
-      ? selectedRegions
-      : regionIds,
-  );
-  // 위 useState 초기값은 이 화면이 "처음 만들어질 때" 딱 한 번만 반영된다. 탐색 탭은
-  // react-navigation 탭 특성상 한 번 열리면 계속 마운트된 채로 남아있어서, 그 뒤 홈에서
-  // "선호 지역"을 바꿔도 이 초기값은 안 따라간다. selectedRegions(prop)가 실제로 바뀔
-  // 때만 다시 맞춰준다 — 매 렌더마다 도는 게 아니라 값이 바뀔 때만 돌도록 join한 키로 비교.
-  const selectedRegionsKey = selectedRegions.join(',');
-  const prevSelectedRegionsKey = useRef(selectedRegionsKey);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: regionIds/selectedRegions는 매 렌더 새 배열이라, 의존성에 넣으면 매번 돈다 — selectedRegionsKey로만 변화를 감지한다
-  useEffect(() => {
-    if (prevSelectedRegionsKey.current === selectedRegionsKey) return;
-    prevSelectedRegionsKey.current = selectedRegionsKey;
-    setSelectedRegionIds(
-      selectedRegions.length > 0 && selectedRegions.length < regionIds.length
-        ? selectedRegions
-        : regionIds,
-    );
-  }, [selectedRegionsKey]);
+  // 지역 칩은 홈의 "어디부터 둘러볼까요?" 카드, 프로필의 "선호 지역"과 같은 전역
+  // selectedRegions를 그대로 쓴다 — 예전엔 이 화면만의 로컬 상태를 따로 뒀는데, 그러면
+  // 탐색에서 지역을 2개 이상 고르고 홈으로 돌아가도 FOR YOU 추천이나 프로필의 선호 지역에
+  // 반영이 안 됐고, 바구니도 안 비워졌다. 셋 다 같은 지역 개념을 공유하도록 여기서도
+  // 전역 상태를 직접 읽고 쓴다(onToggleRegion은 handleToggleRegion과 동일 — 선택 시
+  // 바구니가 비워지는 것도 홈/프로필과 동일하게 적용된다).
+  //
+  // 아직 아무 지역도 안 골랐으면(칩이 하나도 안 켜져 있으면) 제한이 없다는 뜻으로 보고
+  // 전체를 보여준다 — 그래야 비어있는 목록으로 시작하지 않는다.
   const [searchQuery, setSearchQuery] = useState('');
-
-  const handleToggleRegion = (id: string) => {
-    setSelectedRegionIds((prev) => {
-      if (!prev.includes(id)) return [...prev, id];
-      // 최소 하나는 선택된 상태를 유지한다 — 다 해제하면 콘텐츠가 하나도 안 보이게 된다.
-      if (prev.length === 1) return prev;
-      return prev.filter((r) => r !== id);
-    });
-  };
 
   const { contents, isLoading, isError, refetch, fetchNextPage, hasNextPage, isFetchingNextPage } =
     useContents(regionIds);
@@ -229,14 +205,14 @@ export function ContentExploreScreen({
     const keyword = searchQuery.trim().toLowerCase();
     return contents.filter((c) => {
       const matchesCategory = selectedCategory === 'all' || c.category === selectedCategory;
-      const matchesRegion = selectedRegionIds.includes(c.regionId);
+      const matchesRegion = selectedRegions.length === 0 || selectedRegions.includes(c.regionId);
       const matchesKeyword =
         keyword === '' ||
         c.name.toLowerCase().includes(keyword) ||
         c.address.toLowerCase().includes(keyword);
       return matchesCategory && matchesRegion && matchesKeyword;
     });
-  }, [contents, selectedCategory, selectedRegionIds, searchQuery]);
+  }, [contents, selectedCategory, selectedRegions, searchQuery]);
 
   return (
     <ScreenContainer>
@@ -262,8 +238,8 @@ export function ContentExploreScreen({
       <FilterRow>
         <RegionFilter
           regionIds={regionIds}
-          selectedRegionIds={selectedRegionIds}
-          onToggleRegion={handleToggleRegion}
+          selectedRegionIds={selectedRegions}
+          onToggleRegion={onToggleRegion}
         />
         <CategoryFilter selected={selectedCategory} onSelect={setSelectedCategory} />
       </FilterRow>

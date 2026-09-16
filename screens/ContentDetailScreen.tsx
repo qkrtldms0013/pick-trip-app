@@ -338,7 +338,7 @@ const BasketButtonLabel = styled(Text)<{ $active: boolean }>`
   color: ${({ $active }) => ($active ? COLORS.coral500 : COLORS.white)};
 `;
 
-// 콘텐츠 카드에서 "자세히 보기"를 누르면 여는 화면. 원래는 모달(팝업 시트)이었는데,
+// 콘텐츠 카드에서 "상세 설명"을 누르면 여는 화면. 원래는 모달(팝업 시트)이었는데,
 // 뒤로가기·헤더 없이 화면 위에 겹쳐 뜨는 방식이 다른 화면들과 이질감이 있어서 일반
 // 스택 화면으로 바꿨다 — 네이티브 헤더의 뒤로가기 버튼(RootNavigator의 headerScreenOptions)이
 // 닫기 버튼을 대신한다.

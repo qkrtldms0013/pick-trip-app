@@ -1,6 +1,7 @@
 import { NavigationContainer, type NavigationContainerRef } from '@react-navigation/native';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as Linking from 'expo-linking';
+import { StatusBar } from 'expo-status-bar';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { Alert } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -71,6 +72,11 @@ export default function App() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
+      {/* 기본값은 어두운 아이콘(대부분 화면이 흰/연회색 배경). 코랄색 배경을 화면 맨 위까지
+          꽉 채우는 화면(홈 탭, 로그인)은 포커스될 때 스스로 밝은 아이콘으로 바꾸고, 벗어나면
+          다시 이 기본값으로 되돌린다 — MainTabNavigator의 HomeTabScreen, RootNavigator의
+          LoginGate 참고. */}
+      <StatusBar style="dark" />
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <AppStateProvider>

@@ -97,9 +97,9 @@ const FavoriteBadge = styled(TouchableOpacity)`
 
 // 예전엔 카드 전체를 눌러야 바구니에 담겼고, 이 자리엔 담겼는지 보여주기만 하는 체크
 // 표시(비활성)가 있었다. 이제는 카드를 누르면 상세 화면으로 이동하고, 바구니 담기/빼기는
-// 이 버튼을 직접 눌러야 하는 별도 동작이다. "자세히 보기"와 같은 줄에 나란히 두기로 한
+// 이 버튼을 직접 눌러야 하는 별도 동작이다. "상세 설명"과 같은 줄에 나란히 두기로 한
 // 의도라, Footer 안의 일반 flex 아이템으로 둔다(사진 기준 절대위치가 아님) — 그래야
-// 본문 내용 길이가 카드마다 달라져도 항상 "자세히 보기"와 짝을 맞춰 같은 줄에 남는다.
+// 본문 내용 길이가 카드마다 달라져도 항상 "상세 설명"과 짝을 맞춰 같은 줄에 남는다.
 // 담겼으면 코랄 배경 + 체크, 아니면 흰 배경 + 담기 아이콘으로 상태를 구분한다.
 const AddToBasketBadge = styled(TouchableOpacity)<{ $active: boolean }>`
   flex-direction: row;
@@ -155,7 +155,7 @@ const InfoText = styled(Text)`
   color: ${COLORS.gray500};
 `;
 
-// "자세히 보기"와 "담기" 버튼을 한 줄로 묶는 행. margin-top은 원래 DetailLink 혼자
+// "상세 설명"과 "담기" 버튼을 한 줄로 묶는 행. margin-top은 원래 DetailLink 혼자
 // 가지고 있던 값을 그대로 옮겨왔다 — 정보 표 아래 12px 띄우는 간격은 그대로 유지.
 const Footer = styled(View)`
   flex-direction: row;
@@ -237,7 +237,7 @@ export function ContentCard({
           <Footer>
             {onPressDetail ? (
               <DetailLink onPress={onPressDetail} activeOpacity={0.7}>
-                <DetailLinkLabel>자세히 보기</DetailLinkLabel>
+                <DetailLinkLabel>상세 설명</DetailLinkLabel>
                 <Ionicons name="chevron-forward" size={12} color={COLORS.coral700} />
               </DetailLink>
             ) : (

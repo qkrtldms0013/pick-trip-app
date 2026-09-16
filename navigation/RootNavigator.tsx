@@ -1,10 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import type { StackNavigationProp } from '@react-navigation/stack';
 import { createStackNavigator } from '@react-navigation/stack';
-import { useEffect, useState } from 'react';
-import { Alert, TouchableOpacity } from 'react-native';
-import { ConfirmModal } from '../components/molecules/ConfirmModal';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { useCallback, useEffect, useState } from 'react';
+import { TouchableOpacity } from 'react-native';
 import { COLORS } from '../constants/colors';
 import {
   PRIVACY_LAST_UPDATED,
@@ -14,8 +14,7 @@ import {
 } from '../constants/legalDocuments';
 import { FONT } from '../constants/typography';
 import { useAppState } from '../contexts/AppStateContext';
-import { useCurrentUser } from '../hooks/useCurrentUser';
-import { AccountManagementScreen } from '../screens/AccountManagementScreen';
+import { useOpenSavedItinerary } from '../hooks/useOpenSavedItinerary';
 import { AuthScreen } from '../screens/AuthScreen';
 import { ContentDetailScreen } from '../screens/ContentDetailScreen';
 import { FavoritesScreen } from '../screens/FavoritesScreen';
@@ -23,6 +22,7 @@ import { ItineraryResultScreen } from '../screens/ItineraryResultScreen';
 import { LegalDocumentScreen } from '../screens/LegalDocumentScreen';
 import { PrioritySelectScreen } from '../screens/PrioritySelectScreen';
 import { SavedItineraryScreen } from '../screens/SavedItineraryScreen';
+import { SavedTripsScreen } from '../screens/SavedTripsScreen';
 import { SharedItineraryScreen } from '../screens/SharedItineraryScreen';
 import { SplashScreen } from '../screens/SplashScreen';
 import type { RootStackParamList } from '../types/navigation';
@@ -197,9 +197,36 @@ function SavedItineraryGate({
   );
 }
 
+// 홈의 "저장한 여행 → 전체보기"로 들어오는 전체 목록 화면. 카드 눌렀을 때 동작(SavedItinerary로
+// 이동/삭제 확인 모달)은 홈·마이페이지와 완전히 같아서 useOpenSavedItinerary를 그대로 쓴다.
+function SavedTripsGate() {
+  const { itineraryHistory, openingItineraryId, openItinerary, deleteItinerary, deleteModal } =
+    useOpenSavedItinerary();
+  return (
+    <>
+      <SavedTripsScreen
+        itineraryHistory={itineraryHistory}
+        openingItineraryId={openingItineraryId}
+        onOpenItinerary={openItinerary}
+        onDeleteItinerary={deleteItinerary}
+      />
+      {deleteModal}
+    </>
+  );
+}
+
 function LoginGate() {
   const navigation = useNavigation<Nav>();
   const { setIsGuest } = useAppState();
+
+  // 로그인 화면은 상단이 코랄색 브랜드 배경으로 상태바 아래까지 꽉 차 있어서, 이 화면에
+  // 있는 동안만 상태바 아이콘을 밝은색으로 바꾼다. 벗어나면 App.tsx의 기본값(dark)으로 되돌린다.
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+      return () => setStatusBarStyle('dark');
+    }, []),
+  );
 
   return (
     <AuthScreen
@@ -225,12 +252,18 @@ function FavoritesGate() {
   );
 }
 
-// 콘텐츠 카드에서 "자세히 보기"를 눌렀을 때 들어오는 화면. 예전엔 팝업 시트(모달)였는데,
+// 콘텐츠 카드에서 "상세 설명"을 눌렀을 때 들어오는 화면. 예전엔 팝업 시트(모달)였는데,
 // 뒤로가기·헤더 없이 화면 위에 겹쳐 뜨는 방식이 다른 화면들과 이질감이 있어서 일반 스택
 // 화면으로 바꿨다 — 뒤로가기는 네이티브 헤더가 대신 처리해준다.
 function ContentDetailGate({ route }: { route: { params: RootStackParamList['ContentDetail'] } }) {
   const navigation = useNavigation<Nav>();
-  const { favoriteIds, handleToggleFavorite, selectedIds, handleToggleContent } = useAppState();
+  const {
+    favoriteIds,
+    handleToggleFavorite,
+    selectedIds,
+    handleToggleContent,
+    recordRecentlyViewed,
+  } = useAppState();
   const { contentId } = route.params;
 
   return (
@@ -240,7 +273,12 @@ function ContentDetailGate({ route }: { route: { params: RootStackParamList['Con
       onToggleFavorite={handleToggleFavorite}
       inBasket={selectedIds.includes(contentId)}
       onToggleBasket={handleToggleContent}
-      onTitleReady={(title) => navigation.setOptions({ title })}
+      onTitleReady={(title) => {
+        navigation.setOptions({ title });
+        // 콘텐츠가 실제로 로드된 시점(제목이 확정된 시점)에만 "최근에 본"에 남긴다 —
+        // 잘못된 id로 들어와 로딩에 실패한 경우까지 남기지 않기 위함.
+        recordRecentlyViewed(contentId);
+      }}
       onPressNearby={(nearbyContentId) =>
         navigation.push('ContentDetail', { contentId: nearbyContentId })
       }
@@ -254,41 +292,6 @@ function TermsGate() {
 
 function PrivacyGate() {
   return <LegalDocumentScreen sections={PRIVACY_POLICY} lastUpdated={PRIVACY_LAST_UPDATED} />;
-}
-
-// 프로필의 "계정 관리" 행을 눌렀을 때 들어오는 화면. 되돌릴 수 없는 탈퇴 동작이라
-// 확인 모달을 한 번 더 거친다 — 실제로는 30일 유예 기간이 있지만(같은 계정으로
-// 재로그인하면 자동 복구), 그 안내는 모달 문구로 대신한다.
-function AccountManagementGate() {
-  const navigation = useNavigation<Nav>();
-  const { isGuest, handleWithdraw } = useAppState();
-  const { user } = useCurrentUser(!isGuest);
-  const [withdrawConfirmVisible, setWithdrawConfirmVisible] = useState(false);
-
-  const confirmWithdraw = async () => {
-    setWithdrawConfirmVisible(false);
-    const result = await handleWithdraw();
-    if (result.success) {
-      navigation.reset({ index: 0, routes: [{ name: 'Main' }] });
-    } else {
-      Alert.alert('탈퇴에 실패했어요', result.message);
-    }
-  };
-
-  return (
-    <>
-      <AccountManagementScreen user={user} onWithdraw={() => setWithdrawConfirmVisible(true)} />
-      <ConfirmModal
-        visible={withdrawConfirmVisible}
-        title="정말 탈퇴하시겠어요?"
-        message="탈퇴 후 30일 안에 같은 계정으로 다시 로그인하면 자동으로 복구돼요. 그 기간이 지나면 계정과 모든 데이터가 완전히 삭제돼요."
-        confirmLabel="탈퇴하기"
-        destructive
-        onConfirm={confirmWithdraw}
-        onCancel={() => setWithdrawConfirmVisible(false)}
-      />
-    </>
-  );
 }
 
 function SharedGate({ route }: { route: { params: RootStackParamList['Shared'] } }) {
@@ -334,6 +337,11 @@ export function RootNavigator() {
         component={SavedItineraryGate}
         options={{ title: '저장한 일정' }}
       />
+      <Stack.Screen
+        name="SavedTrips"
+        component={SavedTripsGate}
+        options={{ title: '저장한 여행' }}
+      />
       <Stack.Screen name="Shared" component={SharedGate} options={{ title: '공유된 일정' }} />
       <Stack.Screen name="Favorites" component={FavoritesGate} options={{ title: '찜한 콘텐츠' }} />
       <Stack.Screen
@@ -346,11 +354,6 @@ export function RootNavigator() {
         name="Privacy"
         component={PrivacyGate}
         options={{ title: '개인정보처리방침' }}
-      />
-      <Stack.Screen
-        name="AccountManagement"
-        component={AccountManagementGate}
-        options={{ title: '계정 관리' }}
       />
     </Stack.Navigator>
   );

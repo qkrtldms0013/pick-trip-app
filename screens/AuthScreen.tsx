@@ -105,10 +105,12 @@ const KakaoButtonLabel = styled(Text)`
 // 제거해 추출함), 문구·테두리·배경색은 브랜딩 가이드라인이 지정한 값대로 직접 구성한다.
 // https://developers.google.com/identity/branding-guidelines
 // 여백은 가이드라인이 명시한 값 그대로: 로고 앞 12px, 로고와 텍스트 사이 10px, 텍스트 뒤 12px.
+// 모서리 radius는 가이드라인이 각짐/보통/완전 둥근 형태 중 선택 가능하도록 허용한 범위 안에서,
+// 옆 카카오 버튼(12px)과 통일감을 맞춤.
 const GoogleButton = styled(TouchableOpacity)`
   width: 100%;
   height: 52px;
-  border-radius: 4px;
+  border-radius: 12px;
   background-color: ${COLORS.white};
   border-width: 1px;
   border-color: #747775;
