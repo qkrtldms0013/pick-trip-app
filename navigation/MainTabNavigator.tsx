@@ -45,7 +45,7 @@ function HomeTabScreen() {
     selectedRegions,
     selectedIds,
     tripDate,
-    setTripDate,
+    handleChangeTripDate,
     favoriteIds,
     handleToggleFavorite,
     recentlyViewedIds,
@@ -80,7 +80,7 @@ function HomeTabScreen() {
         onBrowse={() => navigation.navigate('Explore')}
         onOpenBasket={() => navigation.navigate('Basket')}
         onLogin={() => navigation.navigate('Login')}
-        onSelectDate={setTripDate}
+        onSelectDate={handleChangeTripDate}
         favoriteIds={favoriteIds}
         onToggleFavorite={handleToggleFavorite}
         onOpenFavorites={() => navigation.navigate('Favorites')}

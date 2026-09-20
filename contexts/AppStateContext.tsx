@@ -41,7 +41,9 @@ interface AppStateValue {
   handleToggleRegion: (regionId: string) => void;
   handleSelectRegion: (regionId: string) => void;
   tripDate: TripDate | null;
-  setTripDate: (value: TripDate | null) => void;
+  // 사용자가 실제로 날짜를 고르는 지점에서만 쓴다 — 일차별 시작 시각(dayStartTimesByDay)도
+  // 같이 비워서, 이전 여행에서 지정한 값이 새 여행에 조용히 실리지 않게 한다.
+  handleChangeTripDate: (value: TripDate) => void;
   companion: CompanionType | null;
   setCompanion: (value: CompanionType | null) => void;
   stylePrefs: StylePreference[];
@@ -346,6 +348,16 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }
   }, [selectedIds, startContentId]);
 
+  // 일차별 시작 시각은 "이번 여행"에만 의미가 있다. 지역·날짜를 실제로 바꾸는 지점
+  // (handleChangeTripDate·handleToggleRegion·handleSelectRegion)에서 직접 비운다 —
+  // selectedRegions/tripDate를 지켜보는 반응형 effect로 하면 복원 시점에도 값이 "바뀌어"
+  // 보여서 예외 처리가 필요해지고, effect 의존성 배열에 쓰기만 하고 안 읽는 파생값을
+  // 넣어야 해서 지저분해진다.
+  const handleChangeTripDate = (value: TripDate) => {
+    setTripDate(value);
+    setDayStartTimesByDay({});
+  };
+
   const handleToggleContent = async (content: Content) => {
     try {
       const existingItemId = itemIdByContentId[content.id];
@@ -370,8 +382,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const isSelecting = !selectedRegions.includes(regionId);
     // 담아둔 콘텐츠는 특정 지역에 속해있으므로, 새 지역을 고르면 이전 지역 것과 섞이지
     // 않도록 바구니를 비운다. 지역 해제(선택 취소)는 그냥 둔다.
-    if (isSelecting && basketItems.length > 0) {
-      clearItems();
+    if (isSelecting) {
+      if (basketItems.length > 0) clearItems();
+      // 이전 여행에서 지정한 일차별 시작 시각이 새 지역(=새 여행)에 조용히 실리지 않게 한다.
+      setDayStartTimesByDay({});
     }
     setSelectedRegions((prev) =>
       isSelecting ? [...prev, regionId] : prev.filter((id) => id !== regionId),
@@ -387,6 +401,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     if (basketItems.length > 0) {
       clearItems();
     }
+    // 이전 여행에서 지정한 일차별 시작 시각이 새 지역(=새 여행)에 조용히 실리지 않게 한다.
+    setDayStartTimesByDay({});
     setSelectedRegions([regionId]);
   };
 
@@ -447,7 +463,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     handleToggleRegion,
     handleSelectRegion,
     tripDate,
-    setTripDate,
+    handleChangeTripDate,
     companion,
     setCompanion,
     stylePrefs,

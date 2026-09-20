@@ -116,7 +116,7 @@ function PriorityGate() {
     updateItemStayMinutes,
     selectedRegions,
     tripDate,
-    setTripDate,
+    handleChangeTripDate,
     travelModes,
     handleToggleTravelMode,
     generateMode,
@@ -137,7 +137,7 @@ function PriorityGate() {
       initialStayMinutes={stayMinutesByContentId}
       selectedRegions={selectedRegions}
       tripDate={tripDate}
-      onChangeDate={setTripDate}
+      onChangeDate={handleChangeTripDate}
       travelModes={travelModes}
       onToggleTravelMode={handleToggleTravelMode}
       isAugmentMode={generateMode === 'AUGMENT'}
