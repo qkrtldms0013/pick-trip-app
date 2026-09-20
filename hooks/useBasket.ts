@@ -40,6 +40,7 @@ export function useBasket() {
           title: content.name,
           thumbnailUrl: content.imageUrl,
           priority,
+          desiredStayMinutes: null,
         };
         return { ...current, items: [...current.items, item] };
       });
@@ -67,6 +68,21 @@ export function useBasket() {
       await persist((current) => ({
         ...current,
         items: current.items.map((item) => (item.itemId === itemId ? { ...item, priority } : item)),
+      }));
+    },
+    [persist],
+  );
+
+  // 한번 지정하면 null로 되돌릴 방법이 없다(BasketItem.desiredStayMinutes 주석의 서버 제약 참고) —
+  // 그래서 minutes는 항상 10~480 범위의 값만 받고, 호출부(PrioritySelectScreen)도 "지우기"는
+  // 제공하지 않고 조정만 제공한다.
+  const updateItemStayMinutes = useCallback(
+    async (itemId: string, minutes: number) => {
+      await persist((current) => ({
+        ...current,
+        items: current.items.map((item) =>
+          item.itemId === itemId ? { ...item, desiredStayMinutes: minutes } : item,
+        ),
       }));
     },
     [persist],
@@ -101,6 +117,7 @@ export function useBasket() {
     removeItem,
     clearItems,
     updateItemPriority,
+    updateItemStayMinutes,
     updateConditions,
   };
 }

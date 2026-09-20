@@ -40,11 +40,20 @@ function makeContent(id: string, latitude: number, longitude: number): Content {
     parking: null,
     stayDuration: null,
     reservationRequired: null,
+    visitorStats: null,
   };
 }
 
 function makeStop(contentId: string, day: number): ItineraryStop {
-  return { contentId, day, startTime: '10:00', endTime: '11:00', reason: '' };
+  return {
+    contentId,
+    day,
+    startTime: '10:00',
+    endTime: '11:00',
+    reason: '',
+    addedByAi: false,
+    addedForRest: false,
+  };
 }
 
 describe('computeDayHops', () => {

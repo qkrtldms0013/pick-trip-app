@@ -59,3 +59,29 @@ export function formatDateRange(travelDate: string | null, duration: number | nu
   if (!duration || duration <= 0) return formatShort(start);
   return `${formatShort(start)} - ${formatShort(addDays(start, duration))}`;
 }
+
+// 분을 사람이 읽는 문구("1시간 30분")로 바꾼다. PrioritySelectScreen의 희망 체류시간
+// 스테퍼와 formatStayDuration이 같이 쓴다.
+export function formatMinutesDuration(totalMinutes: number): string {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes}분`;
+  if (minutes === 0) return `${hours}시간`;
+  return `${hours}시간 ${minutes}분`;
+}
+
+// 시작~종료 시각("HH:MM")으로 체류시간을 사람이 읽는 문구("1시간 30분")로 바꾼다.
+// ItineraryResultScreen·SavedItineraryScreen이 같은 스톱 카드 레이아웃을 써서 공용으로 뺐다.
+export function formatStayDuration(startTime: string, endTime: string): string | null {
+  const toMinutes = (value: string) => {
+    const [h, m] = value.split(':').map(Number);
+    if (Number.isNaN(h) || Number.isNaN(m)) return null;
+    return h * 60 + m;
+  };
+  const start = toMinutes(startTime);
+  const end = toMinutes(endTime);
+  if (start == null || end == null) return null;
+  const diff = end - start;
+  if (diff <= 0) return null;
+  return formatMinutesDuration(diff);
+}

@@ -20,6 +20,7 @@ const contentById: Record<string, Content> = {
     parking: null,
     stayDuration: null,
     reservationRequired: null,
+    visitorStats: null,
   },
   b: {
     id: 'b',
@@ -38,12 +39,29 @@ const contentById: Record<string, Content> = {
     parking: null,
     stayDuration: null,
     reservationRequired: null,
+    visitorStats: null,
   },
 };
 
 const stops: ItineraryStop[] = [
-  { contentId: 'a', day: 1, startTime: '10:00', endTime: '12:00', reason: 'r' },
-  { contentId: 'b', day: 2, startTime: '10:00', endTime: '12:00', reason: 'r' },
+  {
+    contentId: 'a',
+    day: 1,
+    startTime: '10:00',
+    endTime: '12:00',
+    reason: 'r',
+    addedByAi: false,
+    addedForRest: false,
+  },
+  {
+    contentId: 'b',
+    day: 2,
+    startTime: '10:00',
+    endTime: '12:00',
+    reason: 'r',
+    addedByAi: false,
+    addedForRest: false,
+  },
 ];
 
 describe('buildShareText', () => {

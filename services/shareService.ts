@@ -52,6 +52,8 @@ export async function fetchSharedItinerary(token: string): Promise<SharedItinera
         startTime: '',
         endTime: '',
         reason: item.reason,
+        addedByAi: false,
+        addedForRest: false,
       })),
   );
   return {

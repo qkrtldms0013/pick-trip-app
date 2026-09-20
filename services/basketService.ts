@@ -31,6 +31,8 @@ export interface BasketSyncItem {
   priority: Priority;
   title: string | null;
   thumbnailUrl: string | null;
+  // 사용자가 직접 지정한 희망 체류시간(분, 10~480). null이면 서버가 콘텐츠 타입별 기본값을 쓴다.
+  desiredStayMinutes: number | null;
 }
 
 export interface BasketSyncInput {
@@ -46,6 +48,7 @@ interface ServerBasketItem {
   itemId: string;
   contentId: string;
   priority: string;
+  desiredStayMinutes: number | null;
 }
 
 interface ServerBasketResponse {
@@ -102,7 +105,7 @@ export async function syncBasketToServer(input: BasketSyncInput): Promise<void> 
       ),
   );
 
-  // 로컬 항목을 서버에 추가하거나, 이미 있으면 우선순위만 맞춘다.
+  // 로컬 항목을 서버에 추가하거나, 이미 있으면 바뀐 필드(우선순위·희망 체류시간)만 맞춘다.
   await Promise.all(
     input.items.map((item) => {
       const existing = currentByContentId.get(item.contentId);
@@ -113,10 +116,24 @@ export async function syncBasketToServer(input: BasketSyncInput): Promise<void> 
           priority,
           title: item.title,
           thumbnailUrl: item.thumbnailUrl,
+          desiredStayMinutes: item.desiredStayMinutes,
         });
       }
-      if (existing.priority !== priority) {
-        return apiClient.patch(`/baskets/items/${existing.itemId}`, { priority });
+      // PATCH는 priority·desiredStayMinutes 둘 다 선택 필드인 부분 갱신이라, 값을 보낸
+      // 필드만 바뀌고 나머지는 유지된다 — 바뀐 필드만 골라 담는다(둘 다 없으면 400이라
+      // 안 보낸다). desiredStayMinutes가 null이면 "지우기"가 아니라 "안 보냄"으로 다뤄야
+      // 한다 — 서버가 null 필드를 미변경으로 처리하므로 한번 지정한 값은 되돌릴 수 없다
+      // (types/basket.ts의 BasketItem.desiredStayMinutes 주석 참고).
+      const patch: { priority?: string; desiredStayMinutes?: number } = {};
+      if (existing.priority !== priority) patch.priority = priority;
+      if (
+        item.desiredStayMinutes != null &&
+        existing.desiredStayMinutes !== item.desiredStayMinutes
+      ) {
+        patch.desiredStayMinutes = item.desiredStayMinutes;
+      }
+      if (Object.keys(patch).length > 0) {
+        return apiClient.patch(`/baskets/items/${existing.itemId}`, patch);
       }
       return undefined;
     }),

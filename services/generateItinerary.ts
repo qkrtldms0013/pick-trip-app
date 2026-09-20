@@ -31,6 +31,8 @@ export function generateItinerary({ selectedIds, priorities }: GenerateItinerary
       startTime: `${String(startHour).padStart(2, '0')}:00`,
       endTime: `${String(startHour + 2).padStart(2, '0')}:00`,
       reason: PREVIEW_REASON,
+      addedByAi: false,
+      addedForRest: false,
     };
   });
 
