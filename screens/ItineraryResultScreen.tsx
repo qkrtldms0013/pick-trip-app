@@ -1,15 +1,19 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
+import { Badge } from '../components/atoms/Badge';
+import { ConfirmModal } from '../components/molecules/ConfirmModal';
+import { FlowStepBar } from '../components/molecules/FlowStepBar';
+import {
+  DEFAULT_STEP_INTERVAL_MS,
+  GeneratingProgress,
+} from '../components/molecules/GeneratingProgress';
 import { ItineraryDayDistanceList } from '../components/molecules/ItineraryDayDistanceList';
 import { ItineraryRouteMap } from '../components/molecules/ItineraryRouteMap';
 import { ItineraryTitleModal } from '../components/molecules/ItineraryTitleModal';
-import {
-  DEFAULT_STEP_INTERVAL_MS,
-  ProgressChecklist,
-} from '../components/molecules/ProgressChecklist';
 import { CATEGORIES } from '../constants/categories';
 import { COLORS } from '../constants/colors';
 import { REGIONS } from '../constants/regions';
@@ -22,27 +26,45 @@ import { syncBasketToServer } from '../services/basketService';
 import { generateItinerary } from '../services/generateItinerary';
 import type { SavedItinerarySummary } from '../services/itineraryHistoryStorage';
 import {
-  generateItineraryPlan,
+  generateItineraryPreview,
   saveItineraryPlan,
   updateItineraryPlan,
 } from '../services/itineraryService';
-import { addStop, moveStop, removeStop } from '../services/scheduleActions';
+import { addStop, moveStop, removeStop, swapStops } from '../services/scheduleActions';
 import { buildShareText, shareItinerary } from '../services/shareItinerary';
 import { createShareLink } from '../services/shareService';
 import type { CompanionType, StylePreference } from '../types/companion';
-import type { ItineraryStop } from '../types/itinerary';
+import type {
+  GenerateMode,
+  ItineraryStop,
+  ItinerarySuggestion,
+  ItineraryVariant,
+  TravelMode,
+} from '../types/itinerary';
 import type { Priority } from '../types/priority';
 import { computeDayHops, sumDistanceKm } from '../utils/geoDistance';
-import { addDays, formatDateRange, formatDayDate, fromDateString } from '../utils/tripDate';
+import {
+  addDays,
+  formatDateRange,
+  formatDayDate,
+  formatStayDuration,
+  fromDateString,
+} from '../utils/tripDate';
 
 interface ItineraryResultScreenProps {
   selectedRegions: string[];
   selectedIds: string[];
   priorities: Record<string, Priority>;
+  stayMinutesByContentId: Record<string, number | null>;
+  // 일차별 하루 시작 시각("HH:mm"). 키는 일차 번호(1부터). 값이 없는 일차는 서버 기본값(09:00).
+  dayStartTimesByDay: Record<number, string>;
   travelDate: string | null;
   duration: number | null;
   companion: CompanionType | null;
   stylePrefs: StylePreference[];
+  travelModes: TravelMode[];
+  generateMode: GenerateMode;
+  startContentId: string | null;
   initialStops?: ItineraryStop[];
   initialItineraryId?: string;
   initialItineraryTitle?: string;
@@ -53,23 +75,20 @@ interface ItineraryResultScreenProps {
 }
 
 const GENERATING_STEPS = [
-  { label: '담은 장소 분석', sub: '위치·카테고리 확인' },
-  { label: '이동 시간 계산', sub: '최적 동선 탐색' },
-  { label: '운영 시간 확인', sub: '방문 가능 시간 매칭' },
-  { label: '일정 구성', sub: '우선순위·흐름 반영' },
+  { label: '담은 장소 분석', desc: '위치와 카테고리를 확인하고 있어요' },
+  { label: '이동 시간 계산', desc: '가장 짧은 동선을 찾고 있어요' },
+  { label: '운영 시간 확인', desc: '방문 가능한 시간을 맞추고 있어요' },
+  { label: '일정 구성', desc: '우선순위와 흐름을 반영하고 있어요' },
+  { label: '마무리', desc: '일정을 정리하고 있어요' },
 ];
 
-// ProgressChecklist가 단계를 다 보여주는 데 걸리는 실제 시간(체크리스트 애니메이션 총 길이).
-// 실제 생성이 이보다 먼저 끝나도 화면이 애니메이션 도중에 뚝 끊기지 않도록 최소 이 시간만큼은 로딩 화면을 유지한다.
-const MIN_LOADING_MS = GENERATING_STEPS.length * DEFAULT_STEP_INTERVAL_MS + 700;
+// 실제 생성이 이보다 먼저 끝나도(드물게 아주 빠른 응답) GeneratingProgress가
+// 마지막 단계("마무리")까지 보여줄 시간은 확보해준다 — 안 그러면 로딩 화면이
+// 중간 단계에서 뚝 끊기고 바로 완성 화면으로 넘어가 버린다.
+const MIN_LOADING_MS = GENERATING_STEPS.length * DEFAULT_STEP_INTERVAL_MS + 500;
 
-const STEPS = [
-  { key: 'basket', label: '담기' },
-  { key: 'date', label: '날짜' },
-  { key: 'priority', label: '우선순위' },
-  { key: 'done', label: '완성' },
-] as const;
-
+// 이 화면은 네이티브 스택 헤더(RootNavigator의 headerScreenOptions)가 이미 위에 떠 있어서
+// top 세이프에어리어를 또 적용하면 헤더와 본문 사이가 붕 떠 보인다.
 const ScreenContainer = styled(SafeAreaView)`
   flex: 1;
   background-color: ${COLORS.gray50};
@@ -80,6 +99,15 @@ const LoadingContainer = styled(View)`
   align-items: center;
   justify-content: center;
   padding: 24px;
+`;
+
+const LoadingFooterNote = styled(Text)`
+  font-size: 11.5px;
+  font-family: ${FONT.regular};
+  line-height: 18px;
+  color: ${COLORS.gray500};
+  text-align: center;
+  padding: 0 28px 46px;
 `;
 
 const RetryButton = styled(TouchableOpacity)`
@@ -97,77 +125,111 @@ const RetryLabel = styled(Text)`
   font-family: ${FONT.medium};
 `;
 
-// 이 화면은 네이티브 스택 헤더(RootNavigator의 headerScreenOptions)가 이미 위에 떠 있다.
-// 그 아래에 padding-top을 또 주면 헤더와 본문 사이가 붕 떠 보여서, 여기서는 0으로 둔다.
 const Header = styled(View)`
-  padding-horizontal: 20px;
-  padding-bottom: 12px;
-`;
-
-const StepperRow = styled(View)`
-  flex-direction: row;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 20px;
-`;
-
-const StepBadge = styled(View)`
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-`;
-
-const StepCircle = styled(View)<{ $active: boolean }>`
-  width: 22px;
-  height: 22px;
-  border-radius: 100px;
-  align-items: center;
-  justify-content: center;
-  background-color: ${COLORS.coral500};
-`;
-
-const StepLabel = styled(Text)<{ $active: boolean }>`
-  font-size: 13px;
-  font-family: ${({ $active }) => ($active ? FONT.bold : FONT.medium)};
-  color: ${COLORS.gray900};
+  padding: 16px 20px 0;
+  border-bottom-width: 1px;
+  border-bottom-color: ${COLORS.gray100};
 `;
 
 const Subtitle = styled(Text)`
   font-family: ${FONT.regular};
   font-size: 15px;
   color: ${COLORS.gray500};
-  margin-top: 6px;
+  margin-top: 14px;
 `;
 
+// 일차 전환 탭. 리스트·동선 섹션이 이 하나의 선택을 같이 쓴다(따로 지도 위에 일차 칩을
+// 또 두지 않는다). 안이 하나뿐인 여행(당일치기 등)엔 고를 대상이 없으므로 숨긴다.
+const DayTabsRow = styled(View)`
+  flex-direction: row;
+  margin-top: 16px;
+`;
+
+const DayTabButton = styled(TouchableOpacity)`
+  flex: 1;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 10px;
+`;
+
+const DayTabTextRow = styled(View)`
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+`;
+
+const DayTabLabel = styled(Text)<{ $active: boolean }>`
+  font-size: 14px;
+  font-family: ${({ $active }) => ($active ? FONT.bold : FONT.medium)};
+  color: ${({ $active }) => ($active ? COLORS.coral700 : COLORS.gray500)};
+`;
+
+const DayTabCount = styled(Text)<{ $active: boolean }>`
+  font-size: 10.5px;
+  font-family: ${FONT.regular};
+  color: ${({ $active }) => ($active ? COLORS.coral600 : COLORS.gray400)};
+`;
+
+const DayTabUnderline = styled(View)<{ $active: boolean }>`
+  width: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background-color: ${({ $active }) => ($active ? COLORS.coral500 : 'transparent')};
+`;
+
+// 지역·기간·총 곳 수 + 이동시간/도보/교통비를 코랄 톤 블록 하나로 묶는다.
 const SummaryCard = styled(View)`
-  background-color: ${COLORS.white};
+  background-color: ${COLORS.coral50};
   border-radius: 14px;
-  border-width: 1px;
-  border-color: ${COLORS.gray200};
-  margin: 16px 20px 4px;
+  margin: 18px 20px 4px;
   padding: 14px 16px;
+`;
+
+const SummaryTopRow = styled(View)`
   flex-direction: row;
   align-items: center;
-  flex-wrap: wrap;
   gap: 10px;
 `;
 
-const SummaryItem = styled(View)`
-  flex-direction: row;
-  align-items: center;
-  gap: 5px;
+const SummaryRegionText = styled(Text)`
+  font-size: 13.5px;
+  font-family: ${FONT.bold};
+  color: ${COLORS.coral700};
 `;
 
-const SummaryText = styled(Text)`
-  font-size: 13px;
-  font-family: ${FONT.semibold};
-  color: ${COLORS.gray900};
-`;
-
-const SummaryDivider = styled(View)`
+const SummarySeparator = styled(View)`
   width: 1px;
   height: 12px;
-  background-color: ${COLORS.gray200};
+  background-color: ${COLORS.coral100};
+`;
+
+const SummaryDateText = styled(Text)`
+  font-size: 13px;
+  font-family: ${FONT.regular};
+  color: ${COLORS.coral600};
+`;
+
+const SummaryTotalText = styled(Text)`
+  margin-left: auto;
+  font-size: 13px;
+  font-family: ${FONT.bold};
+  color: ${COLORS.coral700};
+`;
+
+const SummaryMetricsRow = styled(View)`
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 11px;
+  padding-top: 11px;
+  border-top-width: 1px;
+  border-top-color: ${COLORS.coral100};
+`;
+
+const SummaryMetricText = styled(Text)`
+  font-size: 11.5px;
+  font-family: ${FONT.regular};
+  color: ${COLORS.coral600};
 `;
 
 const GuestBanner = styled(View)`
@@ -187,188 +249,254 @@ const GuestBannerText = styled(Text)`
   color: ${COLORS.coral700};
 `;
 
-const DayHeaderRow = styled(View)`
+// 이동수단별 여러 안(variant)을 오가는 탭. 2개 이상 안이 있을 때만 보여준다(선택지가
+// 하나뿐이면 비교할 대상이 없으므로).
+const VariantTabRow = styled(View)`
   flex-direction: row;
-  align-items: baseline;
-  gap: 10px;
-  margin: 20px 20px 12px;
+  gap: 8px;
+  margin: 14px 20px 4px;
 `;
 
-const DayBadge = styled(View)`
-  background-color: ${COLORS.gray900};
+const VariantTab = styled(TouchableOpacity)<{ $active: boolean }>`
+  flex: 1;
+  align-items: center;
+  padding-vertical: 10px;
   border-radius: 100px;
-  padding-vertical: 4px;
-  padding-horizontal: 12px;
+  background-color: ${({ $active }) => ($active ? COLORS.coral500 : COLORS.white)};
+  border-width: 1px;
+  border-color: ${({ $active }) => ($active ? COLORS.coral500 : COLORS.gray200)};
 `;
 
-const DayBadgeLabel = styled(Text)`
-  color: ${COLORS.white};
+const VariantTabLabel = styled(Text)<{ $active: boolean }>`
   font-size: 13px;
   font-family: ${FONT.bold};
+  color: ${({ $active }) => ($active ? COLORS.white : COLORS.gray700)};
 `;
 
-const DayMeta = styled(Text)`
-  font-family: ${FONT.regular};
+// 혼잡 기반 순서변경 제안. 일정 상세 상단에 모아서 보여준다 — 수락/거절해야 다음 제안으로
+// 넘어가는 게 아니라, 여러 개면 한눈에 보이도록 세로로 쌓아 보여준다.
+const SuggestionSection = styled(View)`
+  margin: 8px 20px 4px;
+  gap: 8px;
+`;
+
+const SuggestionCard = styled(View)`
+  flex-direction: row;
+  gap: 10px;
+  background-color: ${COLORS.coral50};
+  border-radius: 12px;
+  padding: 12px 14px;
+`;
+
+const SuggestionTextColumn = styled(View)`
+  flex: 1;
+  gap: 8px;
+`;
+
+const SuggestionMessage = styled(Text)`
+  font-family: ${FONT.medium};
   font-size: 13px;
+  line-height: 18px;
+  color: ${COLORS.coral700};
+`;
+
+const SuggestionActionRow = styled(View)`
+  flex-direction: row;
+  gap: 8px;
+`;
+
+const SuggestionAcceptButton = styled(TouchableOpacity)`
+  padding-vertical: 6px;
+  padding-horizontal: 12px;
+  border-radius: 8px;
+  background-color: ${COLORS.coral500};
+`;
+
+const SuggestionAcceptLabel = styled(Text)`
+  font-size: 12px;
+  font-family: ${FONT.semibold};
+  color: ${COLORS.white};
+`;
+
+const SuggestionRejectButton = styled(TouchableOpacity)`
+  padding-vertical: 6px;
+  padding-horizontal: 12px;
+  border-radius: 8px;
+  border-width: 1px;
+  border-color: ${COLORS.coral300};
+`;
+
+const SuggestionRejectLabel = styled(Text)`
+  font-size: 12px;
+  font-family: ${FONT.medium};
+  color: ${COLORS.coral700};
+`;
+
+const DayHeadRow = styled(View)`
+  flex-direction: row;
+  align-items: baseline;
+  gap: 9px;
+  padding: 22px 20px 0;
+  margin-bottom: 16px;
+`;
+
+const DayHeadDate = styled(Text)`
+  font-size: 18px;
+  font-family: ${FONT.bold};
+  color: ${COLORS.gray900};
+  letter-spacing: -0.4px;
+`;
+
+const DayHeadMeta = styled(Text)`
+  font-family: ${FONT.regular};
+  font-size: 11.5px;
   color: ${COLORS.gray500};
 `;
 
 const StopRow = styled(View)`
   flex-direction: row;
-  gap: 14px;
+  gap: 12px;
   padding-horizontal: 20px;
-  margin-bottom: 18px;
 `;
 
 const TimeColumn = styled(View)`
-  align-items: center;
-  width: 52px;
-  position: relative;
+  width: 46px;
+  align-items: flex-end;
 `;
 
-const TimeText = styled(Text)`
+const TimeValue = styled(Text)`
   font-size: 13px;
-  font-family: ${FONT.semibold};
-  color: ${COLORS.gray700};
+  font-family: ${FONT.bold};
+  color: ${COLORS.gray900};
+  text-align: right;
 `;
 
-const TimeDot = styled(View)`
-  width: 7px;
-  height: 7px;
-  border-radius: 100px;
+const TimeStay = styled(Text)`
+  font-size: 9.5px;
+  font-family: ${FONT.regular};
+  color: ${COLORS.gray500};
+  margin-top: 3px;
+  text-align: right;
+`;
+
+// 행 높이만큼 늘어나는 코랄 세로 띠. 시간 열과 본문 사이를 잇는 자리 표시다.
+const Stripe = styled(View)`
+  width: 3px;
+  align-self: stretch;
+  border-radius: 2px;
   background-color: ${COLORS.coral500};
-  margin-top: 6px;
 `;
 
-const TimeConnector = styled(View)`
+const StopBody = styled(View)`
   flex: 1;
-  width: 2px;
-  background-color: ${COLORS.gray200};
-  margin-top: 4px;
+  min-width: 0;
+  padding-bottom: 6px;
 `;
 
-// TimeConnector 위에 겹쳐 그리는 구간 거리 라벨. 콘텐츠1→콘텐츠2 사이 거리를
-// 연결선 세로 중앙에 얹어서 보여준다. RN의 transform은 퍼센트 값을 못 받아서
-// (translateY(-50%) 같은 건 파싱 자체가 실패한다), 폰트 크기 기준 고정 px로 절반만큼 올린다.
-const HopDistanceLabel = styled(Text)`
-  position: absolute;
-  top: 50%;
-  margin-top: -6px;
-  width: 52px;
-  text-align: center;
-  font-size: 10px;
-  font-family: ${FONT.medium};
-  color: ${COLORS.gray400};
-`;
-
-const StopCard = styled(View)`
-  flex: 1;
-  border-width: 1px;
-  border-color: ${COLORS.gray200};
-  border-radius: 12px;
-  padding: 14px 16px;
-  background-color: ${COLORS.white};
-`;
-
-const CategoryBadge = styled(View)<{ $color: string }>`
+const NameRow = styled(View)`
   flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 3px;
-  align-self: flex-start;
-  background-color: ${({ $color }) => `${$color}1F`};
-  border-radius: 100px;
-  padding-vertical: 2px;
-  padding-horizontal: 8px;
-  margin-bottom: 6px;
-`;
-
-const CategoryLabel = styled(Text)<{ $color: string }>`
-  font-size: 11px;
-  font-family: ${FONT.semibold};
-  color: ${({ $color }) => $color};
+  gap: 7px;
 `;
 
 const StopName = styled(Text)`
   font-size: 16px;
-  font-family: ${FONT.semibold};
+  font-family: ${FONT.bold};
   color: ${COLORS.gray900};
+  letter-spacing: -0.3px;
+`;
+
+// 카테고리 배지는 항목마다 다른 색을 쓰지 않는다 — 이 화면 팔레트는 코랄 + 중성 회색뿐이다.
+const CategoryBadge = styled(View)`
+  padding-vertical: 2px;
+  padding-horizontal: 7px;
+  border-radius: 5px;
+  background-color: ${COLORS.coral50};
+`;
+
+const CategoryLabel = styled(Text)`
+  font-size: 10px;
+  font-family: ${FONT.bold};
+  color: ${COLORS.coral700};
 `;
 
 const StopAddress = styled(Text)`
   font-family: ${FONT.regular};
-  font-size: 12px;
+  font-size: 11px;
   color: ${COLORS.gray500};
-  margin-top: 2px;
-`;
-
-const ReasonBox = styled(View)`
-  flex-direction: row;
-  gap: 6px;
-  background-color: ${COLORS.teal50};
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin-top: 10px;
+  margin-top: 5px;
 `;
 
 const ReasonText = styled(Text)`
   font-family: ${FONT.regular};
-  flex: 1;
-  font-size: 12px;
-  color: ${COLORS.teal700};
-  line-height: 17px;
+  font-size: 11.5px;
+  line-height: 18px;
+  color: ${COLORS.gray700};
+  margin-top: 9px;
 `;
 
-const ActionRow = styled(View)`
+const OpsColumn = styled(View)`
+  gap: 5px;
+`;
+
+const OpsButton = styled(TouchableOpacity)<{ $variant: 'move' | 'delete' }>`
+  width: 30px;
+  height: 27px;
+  border-radius: 8px;
+  align-items: center;
+  justify-content: center;
+  background-color: ${({ $variant }) => ($variant === 'delete' ? COLORS.coral50 : COLORS.gray100)};
+`;
+
+// 연속한 두 장소 사이에만 보이는 구간 거리. 마지막 장소 뒤에는 없다.
+const LegRow = styled(View)`
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 9px;
+  margin: 10px 0 14px 58px;
 `;
 
-const ActionButton = styled(TouchableOpacity)`
-  padding-vertical: 6px;
-  padding-horizontal: 12px;
-  border-radius: 8px;
-  background-color: ${COLORS.gray100};
+const LegLine = styled(View)`
+  width: 16px;
+  height: 1px;
+  background-color: ${COLORS.gray200};
 `;
 
-const ActionLabel = styled(Text)`
+const LegText = styled(Text)`
   font-family: ${FONT.regular};
-  font-size: 13px;
-  color: ${COLORS.gray700};
+  font-size: 10.5px;
+  color: ${COLORS.gray500};
 `;
 
-const DeleteButton = styled(TouchableOpacity)`
-  margin-left: auto;
-  padding-vertical: 6px;
-  padding-horizontal: 12px;
-  border-radius: 8px;
-  border-width: 1px;
-  border-color: ${COLORS.error};
+const EmptyDayBlock = styled(View)`
+  background-color: ${COLORS.gray50};
+  border-radius: 12px;
+  align-items: center;
+  padding: 20px;
+  margin: 0 20px 16px;
 `;
 
-const DeleteLabel = styled(Text)`
-  font-size: 13px;
-  color: ${COLORS.error};
-  font-family: ${FONT.medium};
+const EmptyDayText = styled(Text)`
+  font-family: ${FONT.regular};
+  font-size: 12px;
+  color: ${COLORS.gray500};
 `;
 
 const AddButton = styled(TouchableOpacity)`
   margin-horizontal: 20px;
   margin-bottom: 16px;
-  padding-vertical: 12px;
-  border-radius: 10px;
-  border-width: 1.5px;
-  border-style: dashed;
-  border-color: ${COLORS.coral500};
+  height: 44px;
+  border-radius: 12px;
   background-color: ${COLORS.coral50};
   align-items: center;
+  justify-content: center;
 `;
 
 const AddButtonLabel = styled(Text)`
-  font-size: 14px;
+  font-size: 12.5px;
   color: ${COLORS.coral700};
-  font-family: ${FONT.semibold};
+  font-family: ${FONT.bold};
 `;
 
 const CandidateRow = styled(TouchableOpacity)`
@@ -387,83 +515,83 @@ const CandidateName = styled(Text)`
   color: ${COLORS.gray900};
 `;
 
-const StatsCard = styled(View)`
+const RouteDivider = styled(View)`
+  height: 1px;
+  background-color: ${COLORS.gray100};
+  margin: 26px 20px 0;
+`;
+
+// 하단 고정 바 위에 18px 페이드 스트립을 얹어, 스크롤되는 카드가 불투명 바 경계에서
+// 뚝 끊기지 않고 배경색으로 자연스럽게 녹아들게 한다(PrioritySelectScreen과 동일 패턴).
+const BottomBarWrap = styled(View)`
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+`;
+
+const FadeStrip = styled(LinearGradient)`
+  height: 18px;
+`;
+
+const BottomBar = styled(View)`
+  padding-horizontal: 20px;
+  padding-bottom: 28px;
+  background-color: ${COLORS.gray50};
+`;
+
+const BottomActionRow = styled(View)`
   flex-direction: row;
-  background-color: ${COLORS.white};
-  border-radius: 14px;
-  border-width: 1px;
-  border-color: ${COLORS.gray200};
-  margin: 8px 20px 16px;
-  padding: 16px 0;
-`;
-
-const StatItem = styled(View)`
-  flex: 1;
-  align-items: center;
-  gap: 4px;
-`;
-
-const StatDivider = styled(View)`
-  width: 1px;
-  background-color: ${COLORS.gray200};
-`;
-
-const StatValue = styled(Text)`
-  font-size: 16px;
-  font-family: ${FONT.bold};
-  color: ${COLORS.gray900};
-`;
-
-const StatLabel = styled(Text)`
-  font-family: ${FONT.regular};
-  font-size: 11px;
-  color: ${COLORS.gray500};
+  align-items: stretch;
+  gap: 9px;
 `;
 
 const SaveButton = styled(TouchableOpacity)<{ $disabled: boolean }>`
-  margin-horizontal: 20px;
-  margin-top: 4px;
-  margin-bottom: 12px;
-  padding-vertical: 14px;
-  border-radius: 12px;
+  flex: 1;
+  height: 54px;
+  border-radius: 15px;
   align-items: center;
+  justify-content: center;
   background-color: ${({ $disabled }) => ($disabled ? COLORS.gray200 : COLORS.coral500)};
+  shadow-color: ${COLORS.coral500};
+  shadow-opacity: ${({ $disabled }) => ($disabled ? 0 : 0.24)};
+  shadow-radius: 20px;
+  shadow-offset: 0px 8px;
+  elevation: ${({ $disabled }) => ($disabled ? 0 : 6)};
 `;
 
 const SaveButtonLabel = styled(Text)`
   color: ${COLORS.white};
-  font-size: 16px;
-  font-family: ${FONT.medium};
+  font-size: 15px;
+  font-family: ${FONT.bold};
+  text-align: center;
 `;
 
-const ShareButton = styled(TouchableOpacity)`
-  flex-direction: row;
+// "공유하기"는 텍스트 없이 아이콘만 있는 작은 정사각형 버튼으로 일정 저장 옆에 붙인다.
+const ShareIconButton = styled(TouchableOpacity)`
+  width: 54px;
+  height: 54px;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  margin-horizontal: 20px;
-  margin-bottom: 24px;
-  padding-vertical: 14px;
-  border-radius: 12px;
-  background-color: ${COLORS.white};
+  border-radius: 15px;
+  background-color: ${COLORS.gray50};
   border-width: 1px;
   border-color: ${COLORS.gray200};
-`;
-
-const ShareButtonLabel = styled(Text)`
-  color: ${COLORS.gray700};
-  font-size: 16px;
-  font-family: ${FONT.medium};
 `;
 
 export function ItineraryResultScreen({
   selectedRegions,
   selectedIds,
   priorities,
+  stayMinutesByContentId,
+  dayStartTimesByDay,
   travelDate,
   duration,
   companion,
   stylePrefs,
+  travelModes,
+  generateMode,
+  startContentId,
   initialStops,
   initialItineraryId,
   initialItineraryTitle,
@@ -477,6 +605,13 @@ export function ItineraryResultScreen({
   );
   const [errorMessage, setErrorMessage] = useState('');
   const [stops, setStops] = useState<ItineraryStop[]>(initialStops ?? []);
+  // 로그인 사용자가 이동수단을 2개 이상 골랐을 때만 여러 안이 들어온다(게스트는 항상 빈 배열).
+  // stops는 그중 선택된 하나를 그대로 담고 있으므로, 지도·일차별 목록·저장 등 나머지 로직은
+  // variants를 몰라도 stops만 보고 그대로 동작한다.
+  const [variants, setVariants] = useState<ItineraryVariant[]>([]);
+  const [selectedVariantIndex, setSelectedVariantIndex] = useState(0);
+  // 혼잡 기반 순서변경 제안. 수락/거절한 제안은 이 목록에서 바로 지운다(다시 안 보여줌).
+  const [suggestions, setSuggestions] = useState<ItinerarySuggestion[]>([]);
   const [plan, setPlan] = useState<{
     itineraryId: string | null;
     title: string;
@@ -484,10 +619,12 @@ export function ItineraryResultScreen({
     travelDate: string | null;
     duration: number | null;
   } | null>(null);
-  const [expandedDay, setExpandedDay] = useState<number | null>(null);
+  // 일차 탭 하나로 장소 리스트와 동선 섹션(지도·구간 거리)이 함께 갱신된다.
+  const [selectedDay, setSelectedDay] = useState(1);
+  const [isAddingPlace, setIsAddingPlace] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<ItineraryStop | null>(null);
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [showSaveModal, setShowSaveModal] = useState(false);
-  const [selectedRouteDay, setSelectedRouteDay] = useState(1);
 
   const runGenerate = async () => {
     setStatus('loading');
@@ -500,6 +637,9 @@ export function ItineraryResultScreen({
         // 볼 수 있도록 프론트 규칙 기반 생성기를 대신 쓴다.
         const result = generateItinerary({ selectedIds, priorities });
         await minDelay;
+        setVariants([]);
+        setSelectedVariantIndex(0);
+        setSuggestions([]);
         setStops(result.stops);
         setPlan({
           itineraryId: null,
@@ -514,8 +654,10 @@ export function ItineraryResultScreen({
           priority: priorities[contentId] ?? 'good',
         }));
         const contentById = Object.fromEntries(selectedContents.map((c) => [c.id, c]));
-        // 백엔드 /itineraries/generate는 요청 body를 받지 않고 서버에 저장된 바구니만
-        // 읽으므로, 생성을 요청하기 전에 로컬 바구니를 서버로 먼저 동기화해야 한다.
+        // syncBasketToServer는 여전히 필요하다 — /itineraries/generate는 region/travelDate/
+        // duration/companion/stylePrefs/담은 콘텐츠를 요청 바디로 받지 않고(services/
+        // itineraryService.ts 참고) 서버에 저장된 바구니만 그대로 읽으므로, 생성을 요청하기
+        // 전에 로컬 바구니를 먼저 동기화해야 한다.
         await syncBasketToServer({
           region: (selectedRegions[0] ?? '').toUpperCase(),
           travelDate,
@@ -527,24 +669,36 @@ export function ItineraryResultScreen({
             priority: item.priority,
             title: contentById[item.contentId]?.name ?? null,
             thumbnailUrl: contentById[item.contentId]?.imageUrl ?? null,
+            desiredStayMinutes: stayMinutesByContentId[item.contentId] ?? null,
           })),
         });
-        const generated = await generateItineraryPlan({
-          region: selectedRegions[0] ?? '',
-          travelDate,
-          duration,
-          companion,
-          stylePrefs,
-          items,
+        // dayStartTimesByDay는 1부터 시작하는 일차 번호가 키다 — 요청 배열은 0번째가 1일차라
+        // 인덱스를 맞춰서 채운다. 값이 없는 일차는 null로 둬서 서버 기본값(09:00)을 쓰게 한다.
+        const totalGenerateDays = duration != null ? duration + 1 : 1;
+        const dayStartTimes = Array.from(
+          { length: totalGenerateDays },
+          (_, i) => dayStartTimesByDay[i + 1] ?? null,
+        );
+        const preview = await generateItineraryPreview({
+          travelModes,
+          mode: generateMode,
+          startContentId: startContentId ?? undefined,
+          dayStartTimes,
         });
         await minDelay;
-        setStops(generated.stops);
+        setVariants(preview.variants);
+        setSelectedVariantIndex(0);
+        setSuggestions(preview.suggestions);
+        // 첫 안(요청한 travelModes 중 첫 번째)을 기본으로 보여준다. 이후 탭을 눌러 다른
+        // 안으로 바꾸면 handleSelectVariant가 stops를 그 안의 것으로 갈아끼운다.
+        const primary = preview.variants[0];
+        setStops(primary?.stops ?? []);
         setPlan({
-          itineraryId: generated.itineraryId,
-          title: generated.title,
-          region: generated.region,
-          travelDate: generated.travelDate,
-          duration: generated.duration,
+          itineraryId: null,
+          title: primary?.title ?? '나만의 여행 일정',
+          region: preview.region,
+          travelDate: preview.travelDate,
+          duration: preview.duration,
         });
       }
       setStatus('done');
@@ -561,6 +715,37 @@ export function ItineraryResultScreen({
     if (initialStops) return;
     runGenerate();
   }, []);
+
+  // 안 탭을 누르면 stops를 그 안의 것으로 통째로 갈아끼운다 — 지도·일차별 목록은 stops만
+  // 보고 그리므로 이 한 줄이면 화면 전체가 그 안 기준으로 바뀐다. 다른 안으로 넘어가면
+  // 편집 중이던 순서 변경 등은 버려진다(서로 다른 두 일정이니 자연스러운 동작).
+  const handleSelectVariant = (index: number) => {
+    const variant = variants[index];
+    if (!variant) return;
+    setSelectedVariantIndex(index);
+    setStops(variant.stops);
+  };
+
+  // 수락하면 로컬 stops 순서만 바꾼다 — 이 시점(저장 전 미리보기)엔 PATCH할 itineraryId가
+  // 없으므로 서버에는 반영하지 않는다. "일정 저장"을 눌러야 실제로 저장된다.
+  const handleAcceptSuggestion = (suggestion: ItinerarySuggestion) => {
+    const swapWithContentId = suggestion.swapWithContentId;
+    if (!swapWithContentId) return;
+    setStops((prev) =>
+      swapStops(prev, suggestion.dayIndex, suggestion.contentId, swapWithContentId),
+    );
+    setSuggestions((prev) => prev.filter((s) => s !== suggestion));
+  };
+
+  const handleRejectSuggestion = (suggestion: ItinerarySuggestion) => {
+    setSuggestions((prev) => prev.filter((s) => s !== suggestion));
+  };
+
+  // 안(variant)을 바꾸면 stops가 통째로 교체되므로, 지금 stops에 없는 콘텐츠를 가리키는
+  // 제안은 걸러낸다(엉뚱한 안 기준 제안이 남아있는 걸 막는다).
+  const visibleSuggestions = suggestions.filter((s) =>
+    stops.some((stop) => stop.contentId === s.contentId),
+  );
 
   const { contents: selectedContents } = useContentsByIds(selectedIds);
   const titleByContentId = useMemo(
@@ -681,27 +866,28 @@ export function ItineraryResultScreen({
   const totalDays =
     planDurationForDays != null ? planDurationForDays + 1 : Math.max(1, ...stops.map((s) => s.day));
   const { routeByDay } = useItineraryRoutes(stops, contentById, totalDays);
-  const activeRouteDay = Math.min(selectedRouteDay, totalDays);
+  const activeDay = Math.min(selectedDay, totalDays);
 
   if (status === 'loading') {
+    // 아직 plan이 없는 생성 전 단계라, 저장된 결과가 아니라 화면에 넘어온 props(선택 지역·
+    // 날짜·담은 수)로 메타 문구를 만든다.
+    const loadingRegionName = REGIONS.find((r) => r.id === selectedRegions[0])?.name ?? null;
+    const loadingDateRange = formatDateRange(travelDate, duration);
+    const loadingMetaText = [loadingRegionName, `${selectedIds.length}곳`, loadingDateRange]
+      .filter(Boolean)
+      .join(' · ');
+
     return (
-      <ScreenContainer>
-        <LoadingContainer>
-          <ProgressChecklist
-            icon="sparkles"
-            heading="일정을 만들고 있어요"
-            subText={`${selectedIds.length}곳 맞춤 구성 중`}
-            steps={GENERATING_STEPS}
-            onDone={() => {}}
-          />
-        </LoadingContainer>
+      <ScreenContainer edges={['bottom', 'left', 'right']}>
+        <GeneratingProgress steps={GENERATING_STEPS} metaText={loadingMetaText} />
+        <LoadingFooterNote>보통 30초 정도 걸려요.</LoadingFooterNote>
       </ScreenContainer>
     );
   }
 
   if (status === 'error') {
     return (
-      <ScreenContainer>
+      <ScreenContainer edges={['bottom', 'left', 'right']}>
         <LoadingContainer>
           <Subtitle style={{ textAlign: 'center', marginBottom: 4 }}>{errorMessage}</Subtitle>
           <RetryButton onPress={runGenerate} activeOpacity={0.8}>
@@ -712,71 +898,154 @@ export function ItineraryResultScreen({
     );
   }
 
+  const selectedVariant = variants[selectedVariantIndex] ?? null;
   const planRegion = plan?.region ?? selectedRegions[0] ?? null;
   const planTravelDate = plan?.travelDate ?? travelDate;
   const planDuration = planDurationForDays;
   const regionName = REGIONS.find((r) => r.id === planRegion)?.name ?? null;
   const dateRange = formatDateRange(planTravelDate, planDuration);
   const dayList = Array.from({ length: totalDays }, (_, i) => i + 1);
-  // 일차별 총거리(routeByDay가 있으면 그 값, 없으면 직선거리)를 다 더한다.
-  const totalTripDistanceKm = dayList.reduce((sum, day) => {
+
+  // route(카카오 실도로 거리)가 아직 없으면 좌표로 즉석 계산한 직선거리로 채운다.
+  const getDayDistanceKm = (day: number) => {
     const route = routeByDay[day];
-    if (route) return sum + route.totalDistanceKm;
+    if (route) return route.totalDistanceKm;
     const dayStops = stops.filter((stop) => stop.day === day);
-    return sum + sumDistanceKm(computeDayHops(dayStops, contentById));
-  }, 0);
+    return sumDistanceKm(computeDayHops(dayStops, contentById));
+  };
+  const totalTripDistanceKm = dayList.reduce((sum, day) => sum + getDayDistanceKm(day), 0);
+
+  const activeDayStops = stops.filter((stop) => stop.day === activeDay);
+  const activeDayDate = planTravelDate
+    ? addDays(fromDateString(planTravelDate), activeDay - 1)
+    : null;
+  const activeDayRoute = routeByDay[activeDay];
+  const activeDayLegs =
+    activeDayRoute?.legs ??
+    computeDayHops(activeDayStops, contentById).map((hop) => ({
+      ...hop,
+      durationMinutes: null as number | null,
+    }));
+  const activeDayDistanceKm = getDayDistanceKm(activeDay);
+  const activeDayMeta = [
+    `${activeDay}일차`,
+    `${activeDayStops.length}곳`,
+    activeDayStops.length > 1 ? `${activeDayDistanceKm.toFixed(1)}km` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 
   return (
-    <ScreenContainer>
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 40 }}
-      >
-        <Header>
-          <StepperRow>
-            {STEPS.map((step, index) => {
-              const active = index === STEPS.length - 1;
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
+      {/* ScrollView 밖에 둬서 스크롤해도 일차 탭이 계속 눌리는 위치에 남아있게 한다
+          (레퍼런스 디자인의 sticky 헤더와 같은 의도). */}
+      <Header>
+        <FlowStepBar activeIndex={3} />
+        {totalDays > 1 && (
+          <DayTabsRow>
+            {dayList.map((day) => {
+              const active = day === activeDay;
               return (
-                <StepBadge key={step.key}>
-                  <StepCircle $active={active}>
-                    <Ionicons name="checkmark" size={12} color={COLORS.white} />
-                  </StepCircle>
-                  <StepLabel $active={active}>{step.label}</StepLabel>
-                </StepBadge>
+                <DayTabButton key={day} onPress={() => setSelectedDay(day)} activeOpacity={0.7}>
+                  <DayTabTextRow>
+                    <DayTabLabel $active={active}>{day}일차</DayTabLabel>
+                    <DayTabCount $active={active}>
+                      {stops.filter((stop) => stop.day === day).length}곳
+                    </DayTabCount>
+                  </DayTabTextRow>
+                  <DayTabUnderline $active={active} />
+                </DayTabButton>
               );
             })}
-          </StepperRow>
-          <Subtitle>
-            {planDuration != null
-              ? // 0박이면 "0박 1일"이 아니라 "당일치기"로 부른다 — utils/itineraryHistory.ts의
-                // formatItinerarySub와 같은 표기 규칙.
-                `${planDuration > 0 ? `${planDuration}박 ${planDuration + 1}일` : '당일치기'} 기준으로 ${isGuest ? '만들었어요' : 'AI가 만들었어요'}`
-              : isGuest
-                ? '나만의 일정이 완성됐어요'
-                : 'AI가 나만의 일정을 만들었어요'}
-          </Subtitle>
-        </Header>
-
-        {(regionName || dateRange) && (
+          </DayTabsRow>
+        )}
+      </Header>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        // 아래 고정 바(FadeStrip 18 + BottomBar 82 = 100px)를 딱 가릴 만큼만 확보한다.
+        // PrioritySelectScreen의 140px는 그 화면의 범례 행까지 포함한 값이라 이 화면엔 과했다.
+        contentContainerStyle={{ paddingBottom: 100 }}
+      >
+        {(regionName || dateRange || selectedVariant) && (
           <SummaryCard>
-            {regionName && (
-              <SummaryItem>
-                <Ionicons name="location-outline" size={13} color={COLORS.gray900} />
-                <SummaryText>{regionName}</SummaryText>
-              </SummaryItem>
+            {(regionName || dateRange) && (
+              <SummaryTopRow>
+                {regionName && <SummaryRegionText>{regionName}</SummaryRegionText>}
+                {regionName && dateRange && <SummarySeparator />}
+                {dateRange && <SummaryDateText>{dateRange}</SummaryDateText>}
+                <SummaryTotalText>총 {stops.length}곳</SummaryTotalText>
+              </SummaryTopRow>
             )}
-            {dateRange && (
-              <>
-                {regionName && <SummaryDivider />}
-                <SummaryItem>
-                  <Ionicons name="calendar-outline" size={13} color={COLORS.gray900} />
-                  <SummaryText>{dateRange}</SummaryText>
-                </SummaryItem>
-              </>
+
+            {selectedVariant && (
+              <SummaryMetricsRow>
+                {(
+                  [
+                    { key: 'totalTravelMinutes', label: '이동시간', unit: '분' },
+                    { key: 'totalWalkingMinutes', label: '도보', unit: '분' },
+                    { key: 'totalTransitCost', label: '교통비', unit: '원' },
+                  ] as const
+                ).map((metric) => {
+                  const value = selectedVariant.metrics[metric.key];
+                  return (
+                    <SummaryMetricText key={metric.key}>
+                      {metric.label}{' '}
+                      {value == null
+                        ? '산출 불가'
+                        : `${value.toLocaleString('ko-KR')}${metric.unit}`}
+                    </SummaryMetricText>
+                  );
+                })}
+              </SummaryMetricsRow>
             )}
-            <SummaryDivider />
-            <SummaryText>총 {stops.length}곳</SummaryText>
           </SummaryCard>
+        )}
+
+        {variants.length > 1 && (
+          <VariantTabRow>
+            {variants.map((variant, index) => (
+              <VariantTab
+                key={variant.travelMode}
+                $active={index === selectedVariantIndex}
+                onPress={() => handleSelectVariant(index)}
+                activeOpacity={0.8}
+              >
+                <VariantTabLabel $active={index === selectedVariantIndex}>
+                  {variant.label}
+                </VariantTabLabel>
+              </VariantTab>
+            ))}
+          </VariantTabRow>
+        )}
+
+        {visibleSuggestions.length > 0 && (
+          <SuggestionSection>
+            {visibleSuggestions.map((suggestion) => (
+              <SuggestionCard key={`${suggestion.dayIndex}-${suggestion.contentId}`}>
+                <Ionicons name="alert-circle-outline" size={16} color={COLORS.coral700} />
+                <SuggestionTextColumn>
+                  <SuggestionMessage>{suggestion.message}</SuggestionMessage>
+                  <SuggestionActionRow>
+                    {suggestion.swapWithContentId && (
+                      <SuggestionAcceptButton
+                        onPress={() => handleAcceptSuggestion(suggestion)}
+                        activeOpacity={0.8}
+                      >
+                        <SuggestionAcceptLabel>순서 바꾸기</SuggestionAcceptLabel>
+                      </SuggestionAcceptButton>
+                    )}
+                    <SuggestionRejectButton
+                      onPress={() => handleRejectSuggestion(suggestion)}
+                      activeOpacity={0.8}
+                    >
+                      <SuggestionRejectLabel>괜찮아요</SuggestionRejectLabel>
+                    </SuggestionRejectButton>
+                  </SuggestionActionRow>
+                </SuggestionTextColumn>
+              </SuggestionCard>
+            ))}
+          </SuggestionSection>
         )}
 
         {isGuest && (
@@ -789,170 +1058,181 @@ export function ItineraryResultScreen({
           </GuestBanner>
         )}
 
-        {dayList.map((day) => {
-          const dayStops = stops.filter((stop) => stop.day === day);
-          const dayDate = planTravelDate ? addDays(fromDateString(planTravelDate), day - 1) : null;
-          // 실도로 거리(routeByDay)가 아직 없으면 좌표로 즉석 계산한 직선거리로 채운다 —
-          // routeDistanceService.ts 상단 TODO 참고.
-          const dayRoute = routeByDay[day];
-          const dayLegs =
-            dayRoute?.legs ??
-            computeDayHops(dayStops, contentById).map((hop) => ({
-              ...hop,
-              durationMinutes: null as number | null,
-            }));
-          return (
-            <View key={day}>
-              <DayHeaderRow>
-                <DayBadge>
-                  <DayBadgeLabel>{day}일차</DayBadgeLabel>
-                </DayBadge>
-                <DayMeta>
-                  {dayDate ? `${formatDayDate(dayDate)} · ` : ''}
-                  {dayStops.length}곳
-                </DayMeta>
-              </DayHeaderRow>
-              {dayStops.map((stop, index) => {
-                const content = contentById[stop.contentId];
-                const category = content && CATEGORIES.find((c) => c.id === content.category);
-                const accentColor = category?.color ?? COLORS.gray500;
-                // dayLegs를 index로 바로 집으면 안 된다 — 좌표 미상 콘텐츠가 낀 구간은
-                // dayLegs(및 STRAIGHT 폴백인 computeDayHops)에서 건너뛰어져 배열이 압축되므로,
-                // dayStops 위치(index) 기준과 dayLegs 위치 기준이 어긋나 엉뚱한 구간 거리가
-                // 붙을 수 있다. fromContentId로 이 정류지에서 출발하는 구간을 직접 찾는다.
-                const hopToNext = dayLegs.find((leg) => leg.fromContentId === stop.contentId);
-                return (
-                  <StopRow key={stop.contentId}>
-                    <TimeColumn>
-                      <TimeText numberOfLines={1}>{stop.startTime}</TimeText>
-                      <TimeDot />
-                      {index < dayStops.length - 1 && (
-                        <>
-                          <TimeConnector />
-                          {hopToNext && (
-                            <HopDistanceLabel>{hopToNext.distanceKm.toFixed(1)}km</HopDistanceLabel>
-                          )}
-                        </>
-                      )}
-                    </TimeColumn>
-                    <StopCard>
-                      {category && (
-                        <CategoryBadge $color={accentColor}>
-                          <Ionicons name={category.icon} size={11} color={accentColor} />
-                          <CategoryLabel $color={accentColor}>{category.label}</CategoryLabel>
-                        </CategoryBadge>
-                      )}
-                      <StopName>{content?.name}</StopName>
-                      {content?.address && (
-                        <StopAddress numberOfLines={1}>{content.address}</StopAddress>
-                      )}
-                      <ReasonBox>
-                        <Ionicons name="sparkles" size={13} color={COLORS.teal700} />
-                        <ReasonText>{stop.reason}</ReasonText>
-                      </ReasonBox>
-                      <ActionRow>
-                        <ActionButton
-                          onPress={() => setStops((prev) => moveStop(prev, stop.contentId, 'up'))}
-                        >
-                          <ActionLabel>▲</ActionLabel>
-                        </ActionButton>
-                        <ActionButton
-                          onPress={() => setStops((prev) => moveStop(prev, stop.contentId, 'down'))}
-                        >
-                          <ActionLabel>▼</ActionLabel>
-                        </ActionButton>
-                        <DeleteButton
-                          onPress={() => setStops((prev) => removeStop(prev, stop.contentId))}
-                        >
-                          <DeleteLabel>삭제</DeleteLabel>
-                        </DeleteButton>
-                      </ActionRow>
-                    </StopCard>
-                  </StopRow>
-                );
-              })}
-              <AddButton onPress={() => setExpandedDay((prev) => (prev === day ? null : day))}>
-                <AddButtonLabel>+ 장소 추가</AddButtonLabel>
-              </AddButton>
-              {expandedDay === day &&
-                candidates.map((candidate) => (
-                  <CandidateRow
-                    key={candidate.id}
-                    onPress={() => {
-                      setStops((prev) => addStop(prev, candidate.id, day));
-                      setExpandedDay(null);
-                    }}
-                  >
-                    <CandidateName>{candidate.name}</CandidateName>
-                  </CandidateRow>
-                ))}
-            </View>
-          );
-        })}
+        <DayHeadRow>
+          <DayHeadDate>
+            {activeDayDate ? formatDayDate(activeDayDate) : `${activeDay}일차`}
+          </DayHeadDate>
+          <DayHeadMeta>{activeDayMeta}</DayHeadMeta>
+        </DayHeadRow>
 
+        {activeDayStops.length === 0 ? (
+          <EmptyDayBlock>
+            <EmptyDayText>이 날은 아직 비어 있어요</EmptyDayText>
+          </EmptyDayBlock>
+        ) : (
+          activeDayStops.map((stop, index) => {
+            const content = contentById[stop.contentId];
+            const category = content && CATEGORIES.find((c) => c.id === content.category);
+            const stayDuration = formatStayDuration(stop.startTime, stop.endTime);
+            const hopToNext = activeDayLegs.find((leg) => leg.fromContentId === stop.contentId);
+            const isFirst = index === 0;
+            const isLast = index === activeDayStops.length - 1;
+            return (
+              <View key={stop.contentId}>
+                <StopRow>
+                  <TimeColumn>
+                    <TimeValue numberOfLines={1}>{stop.startTime}</TimeValue>
+                    {stayDuration && <TimeStay numberOfLines={1}>{stayDuration}</TimeStay>}
+                  </TimeColumn>
+                  <Stripe />
+                  <StopBody>
+                    {(category || stop.addedByAi || stop.addedForRest) && (
+                      <NameRow style={{ marginBottom: 0 }}>
+                        {category && (
+                          <CategoryBadge>
+                            <CategoryLabel>{category.label}</CategoryLabel>
+                          </CategoryBadge>
+                        )}
+                        {/* addedByAi와 addedForRest가 동시에 true인 경우는 서버 계약상 없다. */}
+                        {stop.addedByAi && (
+                          <Badge label="AI 추천" color={COLORS.teal700} bg={COLORS.teal50} />
+                        )}
+                        {stop.addedForRest && (
+                          <Badge label="휴식" color={COLORS.gray700} bg={COLORS.gray100} />
+                        )}
+                      </NameRow>
+                    )}
+                    <NameRow>
+                      <StopName>{content?.name}</StopName>
+                    </NameRow>
+                    {content?.address && (
+                      <StopAddress numberOfLines={1}>{content.address}</StopAddress>
+                    )}
+                    <ReasonText>{stop.reason}</ReasonText>
+                  </StopBody>
+                  <OpsColumn>
+                    <OpsButton
+                      $variant="move"
+                      disabled={isFirst}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => setStops((prev) => moveStop(prev, stop.contentId, 'up'))}
+                      accessibilityLabel="위로"
+                    >
+                      <Ionicons
+                        name="chevron-up-outline"
+                        size={14}
+                        color={isFirst ? COLORS.gray300 : COLORS.gray700}
+                      />
+                    </OpsButton>
+                    <OpsButton
+                      $variant="move"
+                      disabled={isLast}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => setStops((prev) => moveStop(prev, stop.contentId, 'down'))}
+                      accessibilityLabel="아래로"
+                    >
+                      <Ionicons
+                        name="chevron-down-outline"
+                        size={14}
+                        color={isLast ? COLORS.gray300 : COLORS.gray700}
+                      />
+                    </OpsButton>
+                    <OpsButton
+                      $variant="delete"
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      onPress={() => setDeleteTarget(stop)}
+                      accessibilityLabel="삭제"
+                    >
+                      <Ionicons name="close-outline" size={16} color={COLORS.coral700} />
+                    </OpsButton>
+                  </OpsColumn>
+                </StopRow>
+                {!isLast && hopToNext && (
+                  <LegRow>
+                    <LegLine />
+                    <LegText>
+                      차로 {hopToNext.distanceKm.toFixed(1)}km
+                      {hopToNext.durationMinutes != null ? ` · ${hopToNext.durationMinutes}분` : ''}
+                    </LegText>
+                  </LegRow>
+                )}
+              </View>
+            );
+          })
+        )}
+        <AddButton onPress={() => setIsAddingPlace((prev) => !prev)}>
+          <AddButtonLabel>+ 장소 추가</AddButtonLabel>
+        </AddButton>
+        {isAddingPlace &&
+          candidates.map((candidate) => (
+            <CandidateRow
+              key={candidate.id}
+              onPress={() => {
+                setStops((prev) => addStop(prev, candidate.id, activeDay));
+                setIsAddingPlace(false);
+              }}
+            >
+              <CandidateName>{candidate.name}</CandidateName>
+            </CandidateRow>
+          ))}
+
+        <RouteDivider />
         <ItineraryRouteMap
           stops={stops}
           contentById={contentById}
           routeByDay={routeByDay}
           totalDays={totalDays}
-          selectedDay={activeRouteDay}
-          onSelectDay={setSelectedRouteDay}
+          selectedDay={activeDay}
+          dayLabel={`${activeDay}일차`}
+          dayDistanceText={activeDayStops.length > 1 ? `${activeDayDistanceKm.toFixed(1)}km` : null}
         />
         <ItineraryDayDistanceList
-          day={activeRouteDay}
-          dayStops={stops.filter((stop) => stop.day === activeRouteDay)}
+          day={activeDay}
+          dayStops={activeDayStops}
           contentById={contentById}
-          route={routeByDay[activeRouteDay] ?? null}
+          route={routeByDay[activeDay] ?? null}
+          tripTotalDistanceKm={totalTripDistanceKm}
         />
-
-        <StatsCard>
-          <StatItem>
-            <StatValue>{totalDays}일</StatValue>
-            <StatLabel>기간</StatLabel>
-          </StatItem>
-          <StatDivider />
-          <StatItem>
-            <StatValue>{stops.length}곳</StatValue>
-            <StatLabel>방문지</StatLabel>
-          </StatItem>
-          <StatDivider />
-          <StatItem>
-            <StatValue>{regionName ?? '-'}</StatValue>
-            <StatLabel>지역</StatLabel>
-          </StatItem>
-          <StatDivider />
-          <StatItem>
-            <StatValue>{totalTripDistanceKm.toFixed(1)}km</StatValue>
-            <StatLabel>총 이동거리</StatLabel>
-          </StatItem>
-        </StatsCard>
       </ScrollView>
-      <SaveButton
-        onPress={handleSaveButtonPress}
-        activeOpacity={0.8}
-        disabled={saveState === 'saving' || stops.length === 0}
-        $disabled={stops.length === 0}
-      >
-        <SaveButtonLabel>
-          {stops.length === 0
-            ? '저장할 장소가 없어요'
-            : saveState === 'saving'
-              ? '저장 중...'
-              : saveState === 'saved'
-                ? '저장 완료'
-                : saveState === 'error'
-                  ? '저장 실패했습니다. 다시 시도해주세요.'
-                  : isGuest
-                    ? '로그인하고 일정 저장'
-                    : '일정 저장'}
-        </SaveButtonLabel>
-      </SaveButton>
-      <ShareButton onPress={handleShare} activeOpacity={0.8} disabled={isSharing}>
-        {!isSharing && <Ionicons name="share-outline" size={16} color={COLORS.gray700} />}
-        <ShareButtonLabel>
-          {isSharing ? '공유 링크 만드는 중...' : isGuest ? '로그인하고 공유하기' : '공유하기'}
-        </ShareButtonLabel>
-      </ShareButton>
+      <BottomBarWrap>
+        <FadeStrip colors={['transparent', COLORS.gray50]} />
+        <BottomBar>
+          <BottomActionRow>
+            <SaveButton
+              onPress={handleSaveButtonPress}
+              activeOpacity={0.8}
+              disabled={saveState === 'saving' || stops.length === 0}
+              $disabled={stops.length === 0}
+            >
+              <SaveButtonLabel>
+                {stops.length === 0
+                  ? '저장할 장소가 없어요'
+                  : saveState === 'saving'
+                    ? '저장 중...'
+                    : saveState === 'saved'
+                      ? '저장 완료'
+                      : saveState === 'error'
+                        ? '저장 실패했습니다. 다시 시도해주세요.'
+                        : isGuest
+                          ? '로그인하고 일정 저장'
+                          : '일정 저장'}
+              </SaveButtonLabel>
+            </SaveButton>
+            <ShareIconButton
+              onPress={handleShare}
+              activeOpacity={0.8}
+              disabled={isSharing}
+              accessibilityLabel={isGuest ? '로그인하고 공유하기' : '공유하기'}
+            >
+              {isSharing ? (
+                <ActivityIndicator size="small" color={COLORS.gray500} />
+              ) : (
+                <Ionicons name="share-outline" size={20} color={COLORS.gray700} />
+              )}
+            </ShareIconButton>
+          </BottomActionRow>
+        </BottomBar>
+      </BottomBarWrap>
       <ItineraryTitleModal
         visible={showSaveModal}
         initialTitle={plan?.title ?? initialItineraryTitle ?? '나만의 여행 일정'}
@@ -961,6 +1241,18 @@ export function ItineraryResultScreen({
         subtitle="나중에 '저장한 여행' 목록에서 이 이름으로 보여요"
         onConfirm={handleConfirmSave}
         onClose={() => setShowSaveModal(false)}
+      />
+      <ConfirmModal
+        visible={deleteTarget != null}
+        title="이 장소를 일정에서 뺄까요?"
+        confirmLabel="빼기"
+        cancelLabel="취소"
+        destructive
+        onConfirm={() => {
+          if (deleteTarget) setStops((prev) => removeStop(prev, deleteTarget.contentId));
+          setDeleteTarget(null);
+        }}
+        onCancel={() => setDeleteTarget(null)}
       />
     </ScreenContainer>
   );

@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import { useMemo } from 'react';
 import { Text, View } from 'react-native';
 import styled from 'styled-components';
@@ -14,63 +13,91 @@ interface ItineraryDayDistanceListProps {
   dayStops: ItineraryStop[];
   contentById: Record<string, Content | undefined>;
   route: DayRoute | null;
+  tripTotalDistanceKm: number;
 }
 
 const Card = styled(View)`
   background-color: ${COLORS.white};
-  border-radius: 12px;
+  border-radius: 14px;
   border-width: 1px;
   border-color: ${COLORS.gray200};
-  margin: 0 20px 16px;
-  padding: 4px 16px;
+  margin: 12px 20px 16px;
+  overflow: hidden;
 `;
 
 const LegRow = styled(View)`
   flex-direction: row;
   align-items: center;
-  gap: 8px;
-  padding-vertical: 10px;
-  border-bottom-width: 1px;
-  border-bottom-color: ${COLORS.gray100};
+  gap: 10px;
+  padding: 13px 15px;
+`;
+
+const LegDot = styled(View)`
+  width: 6px;
+  height: 6px;
+  border-radius: 3px;
+  background-color: ${COLORS.coral500};
 `;
 
 const LegNames = styled(Text)`
   flex: 1;
   font-family: ${FONT.regular};
-  font-size: 13px;
+  font-size: 12.5px;
   color: ${COLORS.gray700};
 `;
 
 const LegDistance = styled(Text)`
   font-family: ${FONT.semibold};
-  font-size: 13px;
+  font-size: 12.5px;
   color: ${COLORS.gray900};
 `;
 
-const TotalRow = styled(View)`
+const DayTotalRow = styled(View)`
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding-vertical: 12px;
+  padding: 13px 15px;
+  border-top-width: 1px;
+  border-top-color: ${COLORS.gray100};
+`;
+
+const GrandTotalRow = styled(View)`
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 13px 15px;
+  background-color: ${COLORS.coral50};
 `;
 
 const TotalLabel = styled(Text)`
-  font-family: ${FONT.medium};
-  font-size: 13px;
-  color: ${COLORS.gray500};
+  font-family: ${FONT.regular};
+  font-size: 12.5px;
+  color: ${COLORS.gray700};
 `;
 
-const TotalValue = styled(Text)`
+const DayTotalValue = styled(Text)`
   font-family: ${FONT.bold};
-  font-size: 15px;
-  color: ${COLORS.coral500};
+  font-size: 13.5px;
+  color: ${COLORS.gray900};
+`;
+
+const GrandTotalLabel = styled(Text)`
+  font-family: ${FONT.bold};
+  font-size: 12.5px;
+  color: ${COLORS.coral700};
+`;
+
+const GrandTotalValue = styled(Text)`
+  font-family: ${FONT.bold};
+  font-size: 14px;
+  color: ${COLORS.coral700};
 `;
 
 const BasisNote = styled(Text)`
   font-family: ${FONT.regular};
   font-size: 11px;
   color: ${COLORS.gray400};
-  padding-bottom: 10px;
+  padding: 0 15px 10px;
 `;
 
 // 지도 아래에서 "N일차" 탭을 골랐을 때 그 날 구간별 거리 + 총 이동거리를 보여준다.
@@ -81,6 +108,7 @@ export function ItineraryDayDistanceList({
   dayStops,
   contentById,
   route,
+  tripTotalDistanceKm,
 }: ItineraryDayDistanceListProps) {
   const legs = useMemo(() => {
     if (route) return route.legs.map((leg) => ({ ...leg }));
@@ -106,7 +134,7 @@ export function ItineraryDayDistanceList({
         const to = contentById[leg.toContentId];
         return (
           <LegRow key={`${leg.fromContentId}-${leg.toContentId}`}>
-            <Ionicons name="navigate-outline" size={13} color={COLORS.gray400} />
+            <LegDot />
             <LegNames numberOfLines={1}>
               {from?.name ?? '알 수 없음'} → {to?.name ?? '알 수 없음'}
             </LegNames>
@@ -117,10 +145,14 @@ export function ItineraryDayDistanceList({
           </LegRow>
         );
       })}
-      <TotalRow>
+      <DayTotalRow>
         <TotalLabel>{day}일차 총 이동거리</TotalLabel>
-        <TotalValue>{totalDistanceKm.toFixed(1)}km</TotalValue>
-      </TotalRow>
+        <DayTotalValue>{totalDistanceKm.toFixed(1)}km</DayTotalValue>
+      </DayTotalRow>
+      <GrandTotalRow>
+        <GrandTotalLabel>총 이동거리</GrandTotalLabel>
+        <GrandTotalValue>{tripTotalDistanceKm.toFixed(1)}km</GrandTotalValue>
+      </GrandTotalRow>
       {!isRoad && <BasisNote>직선거리 기준 추정치예요.</BasisNote>}
     </Card>
   );

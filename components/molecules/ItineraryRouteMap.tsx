@@ -31,20 +31,40 @@ interface ItineraryRouteMapProps {
   routeByDay: Record<number, DayRoute | null>;
   totalDays: number;
   selectedDay: number;
-  onSelectDay: (day: number) => void;
+  // 헤더에 통합된 일차 탭이 선택을 이미 소유하므로, 이 컴포넌트는 그 선택을 그대로
+  // 받아서 지도·구간 라벨만 그린다(자체 일차 선택 UI는 두지 않는다).
+  dayLabel: string;
+  dayDistanceText: string | null;
 }
 
 const Wrapper = styled(View)`
-  margin: 8px 20px 4px;
+  margin: 12px 20px 0;
+`;
+
+const RouteHeadRow = styled(View)`
+  flex-direction: row;
+  align-items: baseline;
+  gap: 9px;
+  margin-bottom: 12px;
+`;
+
+const RouteHeadTitle = styled(Text)`
+  font-size: 16px;
+  font-family: ${FONT.bold};
+  color: ${COLORS.gray900};
+`;
+
+const RouteHeadMeta = styled(Text)`
+  font-family: ${FONT.regular};
+  font-size: 11.5px;
+  color: ${COLORS.gray500};
 `;
 
 const MapWrapper = styled(View)`
   width: 100%;
-  height: 220px;
-  border-radius: 12px;
+  height: 210px;
+  border-radius: 16px;
   overflow: hidden;
-  border-width: 1px;
-  border-color: ${COLORS.gray200};
   margin-bottom: 10px;
 `;
 
@@ -63,55 +83,22 @@ const MapPlaceholderText = styled(Text)`
   text-align: center;
 `;
 
-const TopRow = styled(View)`
-  flex-direction: row;
-  justify-content: flex-end;
-  margin-bottom: 8px;
-`;
-
 const DirectionsLink = styled(TouchableOpacity)`
   flex-direction: row;
   align-items: center;
   gap: 2px;
+  margin-left: auto;
 `;
 
 const DirectionsLinkLabel = styled(Text)`
-  font-family: ${FONT.medium};
-  font-size: 13px;
+  font-family: ${FONT.bold};
+  font-size: 12px;
   color: ${COLORS.coral500};
 `;
 
-const TabRow = styled(View)`
-  flex-direction: row;
-  gap: 8px;
-`;
-
-const DayTab = styled(TouchableOpacity)<{ $active: boolean; $color: string }>`
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  padding-vertical: 6px;
-  padding-horizontal: 12px;
-  border-radius: 100px;
-  background-color: ${({ $active, $color }) => ($active ? $color : COLORS.white)};
-  border-width: 1px;
-  border-color: ${({ $color }) => $color};
-`;
-
-const DayTabDot = styled(View)<{ $color: string }>`
-  width: 8px;
-  height: 8px;
-  border-radius: 100px;
-  background-color: ${({ $color }) => $color};
-`;
-
-const DayTabLabel = styled(Text)<{ $active: boolean }>`
-  font-size: 13px;
-  font-family: ${({ $active }) => ($active ? FONT.bold : FONT.medium)};
-  color: ${({ $active }) => ($active ? COLORS.white : COLORS.gray700)};
-`;
-
-// 일정 전체 경로를 일차별 색으로 구분해 지도 위에 그리고, 아래 탭으로 일차를 고를 수 있게 한다.
+// 일정 전체 경로를 일차별 색으로 구분해 지도 위에 그린다. 일차 선택은 헤더의 일차 탭이
+// 소유하고 있으므로 이 컴포넌트는 selectedDay를 그대로 받아서 반영만 한다(자체 선택
+// UI는 두지 않는다 — 같은 선택지가 화면에 두 벌 있는 걸 피한다).
 // 실제 표시 값은 routeByDay(useItineraryRoutes)를 우선 쓰고, 아직 조회 전이거나 실패했으면
 // 좌표로 즉석에서 계산한 직선거리로 대신 채운다(지도가 빈 채로 보이지 않도록).
 export function ItineraryRouteMap({
@@ -120,7 +107,8 @@ export function ItineraryRouteMap({
   routeByDay,
   totalDays,
   selectedDay,
-  onSelectDay,
+  dayLabel,
+  dayDistanceText,
 }: ItineraryRouteMapProps) {
   const dayList = Array.from({ length: totalDays }, (_, i) => i + 1);
 
@@ -222,14 +210,16 @@ export function ItineraryRouteMap({
 
   return (
     <Wrapper>
-      {directionsLink && (
-        <TopRow>
+      <RouteHeadRow>
+        <RouteHeadTitle>{dayLabel} 동선</RouteHeadTitle>
+        {dayDistanceText && <RouteHeadMeta>{dayDistanceText}</RouteHeadMeta>}
+        {directionsLink && (
           <DirectionsLink onPress={() => Linking.openURL(directionsLink)} activeOpacity={0.7}>
             <DirectionsLinkLabel>길찾기</DirectionsLinkLabel>
-            <Ionicons name="arrow-forward" size={13} color={COLORS.coral500} />
+            <Ionicons name="arrow-forward" size={12} color={COLORS.coral500} />
           </DirectionsLink>
-        </TopRow>
-      )}
+        )}
+      </RouteHeadRow>
       <MapWrapper>
         {KAKAO_MAP_JS_KEY ? (
           <WebView
@@ -256,26 +246,6 @@ export function ItineraryRouteMap({
           </MapPlaceholder>
         )}
       </MapWrapper>
-      {dayList.length > 1 && (
-        <TabRow>
-          {dayList.map((day) => {
-            const color = getDayRouteColor(day);
-            const active = day === selectedDay;
-            return (
-              <DayTab
-                key={day}
-                $active={active}
-                $color={color}
-                onPress={() => onSelectDay(day)}
-                activeOpacity={0.8}
-              >
-                <DayTabDot $color={active ? COLORS.white : color} />
-                <DayTabLabel $active={active}>{day}일차</DayTabLabel>
-              </DayTab>
-            );
-          })}
-        </TabRow>
-      )}
     </Wrapper>
   );
 }
