@@ -55,7 +55,7 @@ const SectionBody = styled(Text)`
 // 공통 레이아웃으로 보여준다. 실제 내용은 constants/legalDocuments.ts 참고.
 export function LegalDocumentScreen({ sections, lastUpdated }: LegalDocumentScreenProps) {
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
       <Scroll showsVerticalScrollIndicator={false}>
         <Content>
           <UpdatedAt>시행일 {lastUpdated}</UpdatedAt>

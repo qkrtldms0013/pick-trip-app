@@ -13,6 +13,8 @@ interface SharedItineraryScreenProps {
   onTitleReady?: (title: string) => void;
 }
 
+// 이 화면은 네이티브 스택 헤더(RootNavigator의 headerScreenOptions)가 이미 위에 떠 있어서
+// top 세이프에어리어를 또 적용하면 헤더와 본문 사이가 붕 떠 보인다.
 const ScreenContainer = styled(SafeAreaView)`
   flex: 1;
   background-color: ${COLORS.gray50};
@@ -88,7 +90,7 @@ export function SharedItineraryScreen({ token, onTitleReady }: SharedItinerarySc
 
   if (status === 'loading') {
     return (
-      <ScreenContainer>
+      <ScreenContainer edges={['bottom', 'left', 'right']}>
         <Header>
           <SkeletonBox width="70%" height={15} radius={4} />
         </Header>
@@ -101,7 +103,7 @@ export function SharedItineraryScreen({ token, onTitleReady }: SharedItinerarySc
 
   if (status === 'error' || !itinerary) {
     return (
-      <ScreenContainer>
+      <ScreenContainer edges={['bottom', 'left', 'right']}>
         <CenterBox>
           <Subtitle>공유된 일정을 찾을 수 없어요.</Subtitle>
         </CenterBox>
@@ -112,7 +114,7 @@ export function SharedItineraryScreen({ token, onTitleReady }: SharedItinerarySc
   const dayIndexes = Array.from(new Set(itinerary.stops.map((s) => s.day))).sort((a, b) => a - b);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
       <Header>
         <Subtitle>다른 사람이 공유한 여행 일정이에요</Subtitle>
       </Header>

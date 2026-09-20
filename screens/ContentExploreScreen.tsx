@@ -8,6 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { CategoryFilter } from '../components/molecules/CategoryFilter';
 import { ContentCard } from '../components/molecules/ContentCard';
@@ -31,7 +32,9 @@ interface ContentExploreScreenProps {
   onPressDetail: (contentId: string) => void;
 }
 
-const ScreenContainer = styled(View)`
+// top은 여기서 직접 처리한다 — MainTabNavigator의 공유 SafeAreaView는 홈 탭 코랄 헤더가
+// 상태바 뒤까지 닿도록 top을 비워두기 때문.
+const ScreenContainer = styled(SafeAreaView)`
   flex: 1;
   background-color: ${COLORS.gray50};
 `;
@@ -215,7 +218,7 @@ export function ContentExploreScreen({
   }, [contents, selectedCategory, selectedRegions, searchQuery]);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['top']}>
       <Header>
         <Title>어떤 곳이 끌리나요?</Title>
       </Header>

@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActivityIndicator, Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { FavoriteButton } from '../components/atoms/FavoriteButton';
 import { COLORS } from '../constants/colors';
@@ -63,9 +64,15 @@ interface ProfileContentProps {
   onOpenPrivacy: () => void;
 }
 
-const Scroll = styled(ScrollView)`
+// top은 여기서 직접 처리한다 — MainTabNavigator의 공유 SafeAreaView는 홈 탭 코랄 헤더가
+// 상태바 뒤까지 닿도록 top을 비워두기 때문.
+const ScreenContainer = styled(SafeAreaView)`
   flex: 1;
   background-color: ${COLORS.gray50};
+`;
+
+const Scroll = styled(ScrollView)`
+  flex: 1;
 `;
 
 // 하단 여백은 플로팅 탭바가 가리는 높이를 확보한다.
@@ -454,238 +461,240 @@ export function ProfileContent({
     useContentsByIds(favoriteIds);
 
   return (
-    <Scroll showsVerticalScrollIndicator={false}>
-      <Content>
-        <IdentityCard
-          colors={[COLORS.coral500, COLORS.coral700]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <Avatar>
-            <AvatarLabel>{displayName.charAt(0)}</AvatarLabel>
-          </Avatar>
-          <IdentityInfo>
-            <IdentityName>{displayName}</IdentityName>
-            {isGuest ? (
-              <IdentitySub>게스트로 둘러보는 중</IdentitySub>
-            ) : (
-              user && <IdentityMeta>{formatProviderJoin(user)}</IdentityMeta>
+    <ScreenContainer edges={['top']}>
+      <Scroll showsVerticalScrollIndicator={false}>
+        <Content>
+          <IdentityCard
+            colors={[COLORS.coral500, COLORS.coral700]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+          >
+            <Avatar>
+              <AvatarLabel>{displayName.charAt(0)}</AvatarLabel>
+            </Avatar>
+            <IdentityInfo>
+              <IdentityName>{displayName}</IdentityName>
+              {isGuest ? (
+                <IdentitySub>게스트로 둘러보는 중</IdentitySub>
+              ) : (
+                user && <IdentityMeta>{formatProviderJoin(user)}</IdentityMeta>
+              )}
+            </IdentityInfo>
+            {isGuest && (
+              <LoginButton onPress={onLogin} activeOpacity={0.8}>
+                <LoginButtonLabel>로그인</LoginButtonLabel>
+              </LoginButton>
             )}
-          </IdentityInfo>
-          {isGuest && (
-            <LoginButton onPress={onLogin} activeOpacity={0.8}>
-              <LoginButtonLabel>로그인</LoginButtonLabel>
-            </LoginButton>
-          )}
-        </IdentityCard>
+          </IdentityCard>
 
-        {!isGuest && favoriteIds.length > 0 && (
-          <Card>
-            <SectionTitleRow>
-              <SectionTitleGroup>
-                <SectionTitleText>찜한 장소</SectionTitleText>
-                <SectionTitleCount>{favoriteIds.length}</SectionTitleCount>
-              </SectionTitleGroup>
-              <SeeAllButton onPress={onOpenFavorites} activeOpacity={0.7}>
-                <SeeAllLabel>전체보기</SeeAllLabel>
-                <Ionicons name="chevron-forward" size={14} color={COLORS.gray400} />
-              </SeeAllButton>
-            </SectionTitleRow>
-            {isFavoritesLoading ? (
-              <FavoriteLoadingRow>
-                <ActivityIndicator color={COLORS.coral500} />
-              </FavoriteLoadingRow>
-            ) : (
-              <FavoriteRow horizontal showsHorizontalScrollIndicator={false}>
-                {favoriteContents.map((content) => {
-                  const region = REGIONS.find((r) => r.id === content.regionId);
-                  return (
-                    <FavoriteCard
-                      key={content.id}
-                      onPress={() => onPressContent(content.id)}
-                      activeOpacity={0.8}
-                    >
-                      <FavoriteThumbWrap>
-                        {content.imageUrl ? (
-                          <FavoriteThumbImage
-                            source={{ uri: content.imageUrl }}
-                            resizeMode="cover"
-                          />
-                        ) : (
-                          <FavoriteThumbPlaceholder>
-                            <Ionicons name="image-outline" size={22} color={COLORS.gray400} />
-                          </FavoriteThumbPlaceholder>
-                        )}
-                        <FavoriteBadge>
-                          <FavoriteButton
-                            active
-                            onPress={() => onToggleFavorite(content)}
-                            size={12}
-                            diameter={22}
-                          />
-                        </FavoriteBadge>
-                      </FavoriteThumbWrap>
-                      <FavoriteName numberOfLines={1}>{content.name}</FavoriteName>
-                      {region && <FavoriteRegion numberOfLines={1}>{region.name}</FavoriteRegion>}
-                    </FavoriteCard>
-                  );
-                })}
-              </FavoriteRow>
-            )}
-          </Card>
-        )}
-
-        {itineraryHistory.length > 0 &&
-          (() => {
-            const tripRows = itineraryHistory.map((item, index) => {
-              const isOpening = openingItineraryId === item.itineraryId;
-              return (
-                <TripRow
-                  key={item.itineraryId}
-                  onPress={() => onOpenItinerary(item.itineraryId)}
-                  disabled={openingItineraryId != null}
-                  $last={index === itineraryHistory.length - 1}
-                >
-                  <TripIconBadge>
-                    <Ionicons name="map-outline" size={20} color={COLORS.coral600} />
-                  </TripIconBadge>
-                  <TripBody>
-                    <TripTitleRow>
-                      <TripTitle numberOfLines={1}>{item.title}</TripTitle>
-                    </TripTitleRow>
-                    <TripSub numberOfLines={1}>{formatItinerarySub(item)}</TripSub>
-                  </TripBody>
-                  {isOpening ? (
-                    <ActivityIndicator color={COLORS.coral500} />
-                  ) : (
-                    <>
-                      <DeleteTripButton
-                        onPress={() => onDeleteItinerary(item.itineraryId, item.title)}
-                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                        activeOpacity={0.7}
+          {!isGuest && favoriteIds.length > 0 && (
+            <Card>
+              <SectionTitleRow>
+                <SectionTitleGroup>
+                  <SectionTitleText>찜한 장소</SectionTitleText>
+                  <SectionTitleCount>{favoriteIds.length}</SectionTitleCount>
+                </SectionTitleGroup>
+                <SeeAllButton onPress={onOpenFavorites} activeOpacity={0.7}>
+                  <SeeAllLabel>전체보기</SeeAllLabel>
+                  <Ionicons name="chevron-forward" size={14} color={COLORS.gray400} />
+                </SeeAllButton>
+              </SectionTitleRow>
+              {isFavoritesLoading ? (
+                <FavoriteLoadingRow>
+                  <ActivityIndicator color={COLORS.coral500} />
+                </FavoriteLoadingRow>
+              ) : (
+                <FavoriteRow horizontal showsHorizontalScrollIndicator={false}>
+                  {favoriteContents.map((content) => {
+                    const region = REGIONS.find((r) => r.id === content.regionId);
+                    return (
+                      <FavoriteCard
+                        key={content.id}
+                        onPress={() => onPressContent(content.id)}
+                        activeOpacity={0.8}
                       >
-                        <Ionicons name="trash-outline" size={16} color={COLORS.gray400} />
-                      </DeleteTripButton>
+                        <FavoriteThumbWrap>
+                          {content.imageUrl ? (
+                            <FavoriteThumbImage
+                              source={{ uri: content.imageUrl }}
+                              resizeMode="cover"
+                            />
+                          ) : (
+                            <FavoriteThumbPlaceholder>
+                              <Ionicons name="image-outline" size={22} color={COLORS.gray400} />
+                            </FavoriteThumbPlaceholder>
+                          )}
+                          <FavoriteBadge>
+                            <FavoriteButton
+                              active
+                              onPress={() => onToggleFavorite(content)}
+                              size={12}
+                              diameter={22}
+                            />
+                          </FavoriteBadge>
+                        </FavoriteThumbWrap>
+                        <FavoriteName numberOfLines={1}>{content.name}</FavoriteName>
+                        {region && <FavoriteRegion numberOfLines={1}>{region.name}</FavoriteRegion>}
+                      </FavoriteCard>
+                    );
+                  })}
+                </FavoriteRow>
+              )}
+            </Card>
+          )}
+
+          {itineraryHistory.length > 0 &&
+            (() => {
+              const tripRows = itineraryHistory.map((item, index) => {
+                const isOpening = openingItineraryId === item.itineraryId;
+                return (
+                  <TripRow
+                    key={item.itineraryId}
+                    onPress={() => onOpenItinerary(item.itineraryId)}
+                    disabled={openingItineraryId != null}
+                    $last={index === itineraryHistory.length - 1}
+                  >
+                    <TripIconBadge>
+                      <Ionicons name="map-outline" size={20} color={COLORS.coral600} />
+                    </TripIconBadge>
+                    <TripBody>
+                      <TripTitleRow>
+                        <TripTitle numberOfLines={1}>{item.title}</TripTitle>
+                      </TripTitleRow>
+                      <TripSub numberOfLines={1}>{formatItinerarySub(item)}</TripSub>
+                    </TripBody>
+                    {isOpening ? (
+                      <ActivityIndicator color={COLORS.coral500} />
+                    ) : (
+                      <>
+                        <DeleteTripButton
+                          onPress={() => onDeleteItinerary(item.itineraryId, item.title)}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons name="trash-outline" size={16} color={COLORS.gray400} />
+                        </DeleteTripButton>
+                        <Ionicons name="chevron-forward" size={14} color={COLORS.gray400} />
+                      </>
+                    )}
+                  </TripRow>
+                );
+              });
+
+              return (
+                <Card>
+                  <SectionTitleRow>
+                    <SectionTitleGroup>
+                      <SectionTitleText>저장한 여행</SectionTitleText>
+                      <SectionTitleCount>{itineraryHistory.length}</SectionTitleCount>
+                    </SectionTitleGroup>
+                    <SeeAllButton onPress={onOpenSavedTrips} activeOpacity={0.7}>
+                      <SeeAllLabel>전체보기</SeeAllLabel>
                       <Ionicons name="chevron-forward" size={14} color={COLORS.gray400} />
-                    </>
+                    </SeeAllButton>
+                  </SectionTitleRow>
+                  {itineraryHistory.length > VISIBLE_TRIP_COUNT ? (
+                    <TripScrollBox nestedScrollEnabled showsVerticalScrollIndicator>
+                      {tripRows}
+                    </TripScrollBox>
+                  ) : (
+                    tripRows
                   )}
-                </TripRow>
+                </Card>
               );
-            });
+            })()}
 
-            return (
-              <Card>
-                <SectionTitleRow>
-                  <SectionTitleGroup>
-                    <SectionTitleText>저장한 여행</SectionTitleText>
-                    <SectionTitleCount>{itineraryHistory.length}</SectionTitleCount>
-                  </SectionTitleGroup>
-                  <SeeAllButton onPress={onOpenSavedTrips} activeOpacity={0.7}>
-                    <SeeAllLabel>전체보기</SeeAllLabel>
-                    <Ionicons name="chevron-forward" size={14} color={COLORS.gray400} />
-                  </SeeAllButton>
-                </SectionTitleRow>
-                {itineraryHistory.length > VISIBLE_TRIP_COUNT ? (
-                  <TripScrollBox nestedScrollEnabled showsVerticalScrollIndicator>
-                    {tripRows}
-                  </TripScrollBox>
-                ) : (
-                  tripRows
-                )}
-              </Card>
-            );
-          })()}
+          <Card>
+            <CardTitle>여행 취향</CardTitle>
+            <CardDesc>온보딩에서 고른 취향이에요. AI 추천에 반영됩니다.</CardDesc>
 
-        <Card>
-          <CardTitle>여행 취향</CardTitle>
-          <CardDesc>온보딩에서 고른 취향이에요. AI 추천에 반영됩니다.</CardDesc>
+            <FieldLabel>누구와 함께 가나요?</FieldLabel>
+            <ChipRow>
+              {COMPANIONS.map((c) => (
+                <Chip
+                  key={c.id}
+                  $active={companion === c.id}
+                  onPress={() => onChangeCompanion(c.id)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name={c.icon}
+                    size={14}
+                    color={companion === c.id ? COLORS.coral700 : COLORS.gray700}
+                  />
+                  <ChipLabel $active={companion === c.id}>{c.label}</ChipLabel>
+                </Chip>
+              ))}
+            </ChipRow>
 
-          <FieldLabel>누구와 함께 가나요?</FieldLabel>
-          <ChipRow>
-            {COMPANIONS.map((c) => (
-              <Chip
-                key={c.id}
-                $active={companion === c.id}
-                onPress={() => onChangeCompanion(c.id)}
+            <FieldLabel>여행 스타일</FieldLabel>
+            <ChipRow>
+              {STYLE_OPTIONS.map((option) => (
+                <Chip
+                  key={option.id}
+                  $active={stylePrefs.includes(option.id)}
+                  onPress={() => onToggleStylePref(option.id)}
+                  activeOpacity={0.8}
+                >
+                  <ChipLabel $active={stylePrefs.includes(option.id)}>{option.label}</ChipLabel>
+                </Chip>
+              ))}
+            </ChipRow>
+
+            <FieldLabel>선호 지역</FieldLabel>
+            <ChipRow style={{ marginBottom: 0 }}>
+              {REGIONS.map((region) => (
+                <Chip
+                  key={region.id}
+                  $active={selectedRegions.includes(region.id)}
+                  onPress={() => onToggleRegion(region.id)}
+                  activeOpacity={0.8}
+                >
+                  <ChipLabel $active={selectedRegions.includes(region.id)}>{region.name}</ChipLabel>
+                </Chip>
+              ))}
+            </ChipRow>
+          </Card>
+
+          <Card>
+            <CardTitle>알림 설정</CardTitle>
+            <NotifyRow $last>
+              <View>
+                <NotifyTitle>여행 리마인더</NotifyTitle>
+                <NotifyDesc>출발 전 일정 알림</NotifyDesc>
+              </View>
+              <Toggle
+                $on={tripReminderEnabled}
+                onPress={() => onToggleTripReminder(!tripReminderEnabled)}
                 activeOpacity={0.8}
               >
-                <Ionicons
-                  name={c.icon}
-                  size={14}
-                  color={companion === c.id ? COLORS.coral700 : COLORS.gray700}
-                />
-                <ChipLabel $active={companion === c.id}>{c.label}</ChipLabel>
-              </Chip>
-            ))}
-          </ChipRow>
+                <ToggleKnob $on={tripReminderEnabled} />
+              </Toggle>
+            </NotifyRow>
+          </Card>
 
-          <FieldLabel>여행 스타일</FieldLabel>
-          <ChipRow>
-            {STYLE_OPTIONS.map((option) => (
-              <Chip
-                key={option.id}
-                $active={stylePrefs.includes(option.id)}
-                onPress={() => onToggleStylePref(option.id)}
-                activeOpacity={0.8}
-              >
-                <ChipLabel $active={stylePrefs.includes(option.id)}>{option.label}</ChipLabel>
-              </Chip>
-            ))}
-          </ChipRow>
+          {!isGuest && (
+            <>
+              <LogoutButton onPress={onLogout} activeOpacity={0.8}>
+                <LogoutLabel>로그아웃</LogoutLabel>
+              </LogoutButton>
+              <WithdrawButton onPress={onWithdraw} activeOpacity={0.8}>
+                <WithdrawLabel>회원 탈퇴</WithdrawLabel>
+              </WithdrawButton>
+            </>
+          )}
 
-          <FieldLabel>선호 지역</FieldLabel>
-          <ChipRow style={{ marginBottom: 0 }}>
-            {REGIONS.map((region) => (
-              <Chip
-                key={region.id}
-                $active={selectedRegions.includes(region.id)}
-                onPress={() => onToggleRegion(region.id)}
-                activeOpacity={0.8}
-              >
-                <ChipLabel $active={selectedRegions.includes(region.id)}>{region.name}</ChipLabel>
-              </Chip>
-            ))}
-          </ChipRow>
-        </Card>
-
-        <Card>
-          <CardTitle>알림 설정</CardTitle>
-          <NotifyRow $last>
-            <View>
-              <NotifyTitle>여행 리마인더</NotifyTitle>
-              <NotifyDesc>출발 전 일정 알림</NotifyDesc>
-            </View>
-            <Toggle
-              $on={tripReminderEnabled}
-              onPress={() => onToggleTripReminder(!tripReminderEnabled)}
-              activeOpacity={0.8}
-            >
-              <ToggleKnob $on={tripReminderEnabled} />
-            </Toggle>
-          </NotifyRow>
-        </Card>
-
-        {!isGuest && (
-          <>
-            <LogoutButton onPress={onLogout} activeOpacity={0.8}>
-              <LogoutLabel>로그아웃</LogoutLabel>
-            </LogoutButton>
-            <WithdrawButton onPress={onWithdraw} activeOpacity={0.8}>
-              <WithdrawLabel>회원 탈퇴</WithdrawLabel>
-            </WithdrawButton>
-          </>
-        )}
-
-        <LegalRow>
-          <LegalLink onPress={onOpenTerms} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <LegalLinkLabel>이용약관</LegalLinkLabel>
-          </LegalLink>
-          <LegalDivider>|</LegalDivider>
-          <LegalLink onPress={onOpenPrivacy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-            <LegalLinkLabel>개인정보처리방침</LegalLinkLabel>
-          </LegalLink>
-        </LegalRow>
-      </Content>
-    </Scroll>
+          <LegalRow>
+            <LegalLink onPress={onOpenTerms} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <LegalLinkLabel>이용약관</LegalLinkLabel>
+            </LegalLink>
+            <LegalDivider>|</LegalDivider>
+            <LegalLink onPress={onOpenPrivacy} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <LegalLinkLabel>개인정보처리방침</LegalLinkLabel>
+            </LegalLink>
+          </LegalRow>
+        </Content>
+      </Scroll>
+    </ScreenContainer>
   );
 }

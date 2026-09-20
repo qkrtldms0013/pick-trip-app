@@ -227,7 +227,9 @@ function ProfileTabScreen() {
 
 export function MainTabNavigator() {
   return (
-    <ScreenContainer>
+    // top은 각 탭 화면이 직접 처리한다 — 홈 탭은 코랄 헤더를 상태바 뒤까지 꽉 채워야 해서
+    // 여기서 미리 top을 띄워두면 그 자리에 흰/회색 틈이 남아 상태바 아이콘이 안 보이게 된다.
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
       <Tab.Navigator
         tabBar={(props) => <CustomTabBar {...props} />}
         screenOptions={{ headerShown: false }}

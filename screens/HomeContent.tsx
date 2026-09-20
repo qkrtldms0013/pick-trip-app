@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { FavoriteButton } from '../components/atoms/FavoriteButton';
 import { SavedTripCard } from '../components/molecules/SavedTripCard';
@@ -61,9 +62,13 @@ const Scroll = styled(ScrollView)`
   background-color: ${COLORS.gray50};
 `;
 
-const HeaderSection = styled(View)`
+// 상태바 뒤까지 코랄 배경을 채우기 위해 MainTabNavigator가 top 세이프에어리어를 비워둔다.
+// 그만큼을 여기서 직접 padding-top에 더해 실제 콘텐츠는 상태바 아래에서 시작하게 한다.
+const HeaderSection = styled(View)<{ $topInset: number }>`
   background-color: ${COLORS.coral500};
-  padding: 32px 20px 56px;
+  padding-top: ${({ $topInset }) => $topInset + 32}px;
+  padding-horizontal: 20px;
+  padding-bottom: 56px;
   border-bottom-left-radius: 28px;
   border-bottom-right-radius: 28px;
 `;
@@ -568,6 +573,7 @@ export function HomeContent({
   recentlyViewedIds,
   onSelectRegion,
 }: HomeContentProps) {
+  const insets = useSafeAreaInsets();
   const [showDatePicker, setShowDatePicker] = useState(false);
   const count = selectedIds.length;
   const regionNames = REGIONS.filter((r) => selectedRegions.includes(r.id)).map((r) => r.name);
@@ -629,7 +635,7 @@ export function HomeContent({
 
   return (
     <Scroll showsVerticalScrollIndicator={false}>
-      <HeaderSection>
+      <HeaderSection $topInset={insets.top}>
         {isGuest && (
           <LoginBar onPress={onLogin} activeOpacity={0.8}>
             <LoginBarText>로그인하고 맞춤 추천 받기</LoginBarText>

@@ -112,7 +112,7 @@ export function SavedTripsScreen({
   const tabLabel = activeTab === 'upcoming' ? '다가오는 여행' : '지난 여행';
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
       <TabRow>
         <TabButton
           $active={activeTab === 'upcoming'}

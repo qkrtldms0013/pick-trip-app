@@ -1,4 +1,5 @@
 import { Alert, ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { ContentCard } from '../components/molecules/ContentCard';
 import { ContentCardSkeleton } from '../components/molecules/ContentCardSkeleton';
@@ -19,7 +20,9 @@ interface BasketContentProps {
   onPressDetail: (contentId: string) => void;
 }
 
-const Container = styled(View)`
+// top은 여기서 직접 처리한다 — MainTabNavigator의 공유 SafeAreaView는 홈 탭 코랄 헤더가
+// 상태바 뒤까지 닿도록 top을 비워두기 때문.
+const Container = styled(SafeAreaView)`
   flex: 1;
   background-color: ${COLORS.gray50};
 `;
@@ -117,7 +120,7 @@ export function BasketContent({
   const ready = selectedIds.length >= 2;
 
   return (
-    <Container>
+    <Container edges={['top']}>
       <Header>
         <Title>여행 바구니</Title>
         <Subtitle>담은 콘텐츠를 확인하고 일정을 만들어보세요</Subtitle>

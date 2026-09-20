@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Image, Text, TouchableOpacity, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import styled from 'styled-components';
 import { COLORS } from '../constants/colors';
 import { FONT } from '../constants/typography';
@@ -21,10 +21,13 @@ const ScreenContainer = styled(SafeAreaView)`
   background-color: ${COLORS.white};
 `;
 
-// padding-top을 넉넉히 둬서, 투명 헤더 위에 떠 있는 뒤로가기 아이콘과 겹치거나
+// 코랄 배경을 상태바 뒤까지 채우기 위해 ScreenContainer가 top 세이프에어리어를 비워둔다.
+// padding-top에 그만큼을 더해서, 투명 헤더 위에 떠 있는 뒤로가기 아이콘과 겹치거나
 // 너무 붙어 보이지 않게 한다.
-const BrandSection = styled(View)`
-  padding: 80px 28px 40px;
+const BrandSection = styled(View)<{ $topInset: number }>`
+  padding-top: ${({ $topInset }) => $topInset + 80}px;
+  padding-horizontal: 28px;
+  padding-bottom: 40px;
   background-color: ${COLORS.coral500};
   overflow: hidden;
 `;
@@ -171,6 +174,7 @@ const GuestButtonLabel = styled(Text)`
 `;
 
 export function AuthScreen({ onAuthed, onGuest, onOpenTerms, onOpenPrivacy }: AuthScreenProps) {
+  const insets = useSafeAreaInsets();
   const [loadingProvider, setLoadingProvider] = useState<AuthProvider | null>(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -187,8 +191,8 @@ export function AuthScreen({ onAuthed, onGuest, onOpenTerms, onOpenPrivacy }: Au
   };
 
   return (
-    <ScreenContainer>
-      <BrandSection>
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
+      <BrandSection $topInset={insets.top}>
         <BrandRow>
           <BrandIcon source={require('../assets/icon.png')} resizeMode="contain" />
           <BrandName>PickTrip</BrandName>

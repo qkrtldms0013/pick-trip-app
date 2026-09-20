@@ -72,7 +72,7 @@ export function FavoritesScreen({
   const { contents: items, isLoading, isError, refetch } = useContentsByIds(favoriteIds);
 
   return (
-    <ScreenContainer>
+    <ScreenContainer edges={['bottom', 'left', 'right']}>
       <Header>
         <Subtitle>하트를 눌러 찜해둔 콘텐츠예요</Subtitle>
       </Header>
