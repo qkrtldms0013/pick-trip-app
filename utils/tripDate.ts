@@ -70,16 +70,29 @@ export function formatMinutesDuration(totalMinutes: number): string {
   return `${hours}시간 ${minutes}분`;
 }
 
+// "HH:MM"을 자정 기준 분으로 바꾼다. 형식이 아니거나 빈 문자열이면 null.
+// 주의: 빈 문자열은 split(':').map(Number)가 [0](Number('')===0)이 되어 h만 채워지고
+// m은 undefined가 되는데, Number.isNaN(undefined)는 false라 NaN 검사를 통과해버린다 —
+// 반드시 Number.isFinite로 검사해야 한다.
+export function parseTimeToMinutes(time: string): number | null {
+  const [h, m] = time.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+// 분을 "HH:MM"으로 바꾼다. 하루(1440분) 범위를 벗어나면 감싼다.
+export function minutesToTimeOfDay(totalMinutes: number): string {
+  const wrapped = ((totalMinutes % 1440) + 1440) % 1440;
+  const h = Math.floor(wrapped / 60);
+  const m = wrapped % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 // 시작~종료 시각("HH:MM")으로 체류시간을 사람이 읽는 문구("1시간 30분")로 바꾼다.
 // ItineraryResultScreen·SavedItineraryScreen이 같은 스톱 카드 레이아웃을 써서 공용으로 뺐다.
 export function formatStayDuration(startTime: string, endTime: string): string | null {
-  const toMinutes = (value: string) => {
-    const [h, m] = value.split(':').map(Number);
-    if (Number.isNaN(h) || Number.isNaN(m)) return null;
-    return h * 60 + m;
-  };
-  const start = toMinutes(startTime);
-  const end = toMinutes(endTime);
+  const start = parseTimeToMinutes(startTime);
+  const end = parseTimeToMinutes(endTime);
   if (start == null || end == null) return null;
   const diff = end - start;
   if (diff <= 0) return null;
