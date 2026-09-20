@@ -764,7 +764,11 @@ export function PrioritySelectScreen({
           <View style={{ paddingTop: 4, gap: 10 }}>
             {selectedContents.map((content) => {
               const category = CATEGORIES.find((c) => c.id === content.category);
-              const priority = priorities[content.id];
+              // priorities는 마운트 시점 selectedIds 스냅샷으로 한 번만 초기화된다(초기
+              // useState). 화면이 열린 채로 바구니에 새 항목이 추가되거나, 뺐다가 다시
+              // 담은 콘텐츠의 캐시된 상세가 나중에 도착하면 이 id가 아직 키에 없을 수
+              // 있다 — 기본값 'good'으로 방어한다.
+              const priority = priorities[content.id] ?? 'good';
               const isStart = startContentId === content.id;
               const stay = stayMinutes[content.id] ?? null;
               return (
