@@ -30,13 +30,7 @@ import { buildShareText, shareItinerary } from '../services/shareItinerary';
 import { createShareLink } from '../services/shareService';
 import type { ItineraryStop } from '../types/itinerary';
 import { computeDayHops, sumDistanceKm } from '../utils/geoDistance';
-import {
-  addDays,
-  formatDateRange,
-  formatDayDate,
-  formatStayDuration,
-  fromDateString,
-} from '../utils/tripDate';
+import { addDays, formatDateRange, formatDayDate, fromDateString } from '../utils/tripDate';
 
 interface SavedItineraryScreenProps {
   itineraryId: string;
@@ -227,14 +221,6 @@ const TimeValue = styled(Text)`
   font-size: 13px;
   font-family: ${FONT.bold};
   color: ${COLORS.gray900};
-  text-align: right;
-`;
-
-const TimeStay = styled(Text)`
-  font-size: 9.5px;
-  font-family: ${FONT.regular};
-  color: ${COLORS.gray500};
-  margin-top: 3px;
   text-align: right;
 `;
 
@@ -768,16 +754,18 @@ export function SavedItineraryScreen({ itineraryId, onSaved }: SavedItineraryScr
           activeDayStops.map((stop, index) => {
             const content = contentById[stop.contentId];
             const category = content && CATEGORIES.find((c) => c.id === content.category);
-            const stayDuration = formatStayDuration(stop.startTime, stop.endTime);
             const hopToNext = activeDayLegs.find((leg) => leg.fromContentId === stop.contentId);
             const isFirst = index === 0;
             const isLast = index === activeDayStops.length - 1;
             return (
               <View key={stop.contentId}>
                 <StopRow>
+                  {/* 저장된 일정 응답(SavedResponse)엔 실제 방문 시각이 없어서
+                      itineraryService.ts의 daysToStops가 10시부터 2시간씩 순번 기반으로
+                      합성한 값이다 — 체류시간을 실제 데이터처럼 보여주면 안 되므로
+                      (모든 정류지가 항상 "2시간") 시작 시각만 보여주고 체류시간 줄은 없앤다. */}
                   <TimeColumn>
                     <TimeValue numberOfLines={1}>{stop.startTime}</TimeValue>
-                    {stayDuration && <TimeStay numberOfLines={1}>{stayDuration}</TimeStay>}
                   </TimeColumn>
                   <Stripe />
                   <StopBody>
