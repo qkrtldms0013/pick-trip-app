@@ -110,11 +110,21 @@ function PriorityGate() {
   const {
     selectedIds,
     priorities,
+    stayMinutesByContentId,
     itemIdByContentId,
     updateItemPriority,
+    updateItemStayMinutes,
     selectedRegions,
     tripDate,
     setTripDate,
+    travelModes,
+    handleToggleTravelMode,
+    generateMode,
+    handleToggleAugmentMode,
+    startContentId,
+    setStartContentId,
+    dayStartTimesByDay,
+    setDayStartTimesByDay,
     setInitialStops,
     setInitialItineraryId,
     setInitialItineraryTitle,
@@ -124,16 +134,31 @@ function PriorityGate() {
     <PrioritySelectScreen
       selectedIds={selectedIds}
       initialPriorities={priorities}
+      initialStayMinutes={stayMinutesByContentId}
       selectedRegions={selectedRegions}
       tripDate={tripDate}
       onChangeDate={setTripDate}
-      onContinue={async (newPriorities) => {
-        await Promise.all(
-          Object.entries(newPriorities).map(([contentId, priority]) => {
+      travelModes={travelModes}
+      onToggleTravelMode={handleToggleTravelMode}
+      isAugmentMode={generateMode === 'AUGMENT'}
+      onToggleAugmentMode={handleToggleAugmentMode}
+      startContentId={startContentId}
+      onSelectStartContent={setStartContentId}
+      initialDayStartTimes={dayStartTimesByDay}
+      onContinue={async (newPriorities, newStayMinutes, newDayStartTimes) => {
+        setDayStartTimesByDay(newDayStartTimes);
+        await Promise.all([
+          ...Object.entries(newPriorities).map(([contentId, priority]) => {
             const itemId = itemIdByContentId[contentId];
             return itemId ? updateItemPriority(itemId, priority) : Promise.resolve();
           }),
-        );
+          ...Object.entries(newStayMinutes)
+            .filter((entry): entry is [string, number] => entry[1] != null)
+            .map(([contentId, minutes]) => {
+              const itemId = itemIdByContentId[contentId];
+              return itemId ? updateItemStayMinutes(itemId, minutes) : Promise.resolve();
+            }),
+        ]);
         // 저장한 여행을 한 번이라도 열어봤으면 initialItineraryId/initialStops/initialItineraryTitle이
         // 그때 값으로 남아있다. 여기서 안 지우면 방금 새로 만든 일정을 저장할 때 그 값으로 폴백해서
         // (ItineraryResultScreen.handleSave 참고) 새 일정 대신 예전 일정을 덮어써버린다.
@@ -152,9 +177,14 @@ function ItineraryGate() {
     selectedRegions,
     selectedIds,
     priorities,
+    stayMinutesByContentId,
+    dayStartTimesByDay,
     tripDate,
     companion,
     stylePrefs,
+    travelModes,
+    generateMode,
+    startContentId,
     initialStops,
     initialItineraryId,
     initialItineraryTitle,
@@ -167,10 +197,15 @@ function ItineraryGate() {
       selectedRegions={selectedRegions}
       selectedIds={selectedIds}
       priorities={priorities}
+      stayMinutesByContentId={stayMinutesByContentId}
+      dayStartTimesByDay={dayStartTimesByDay}
       travelDate={tripDate ? toDateString(tripDate.startDate) : null}
       duration={tripDate?.nights ?? null}
       companion={companion}
       stylePrefs={stylePrefs}
+      travelModes={travelModes}
+      generateMode={generateMode}
+      startContentId={startContentId}
       initialStops={initialStops}
       initialItineraryId={initialItineraryId}
       initialItineraryTitle={initialItineraryTitle}
