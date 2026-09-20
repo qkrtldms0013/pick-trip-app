@@ -227,6 +227,12 @@ const VisitorStatLabel = styled(Text)`
   color: ${COLORS.gray500};
 `;
 
+const VisitorStatPeriod = styled(Text)`
+  font-family: ${FONT.regular};
+  font-size: 9.5px;
+  color: ${COLORS.gray400};
+`;
+
 const VisitorStatsNotice = styled(Text)`
   font-family: ${FONT.regular};
   font-size: 11px;
@@ -612,9 +618,13 @@ export function ContentDetailScreen({
                           <VisitorStatValue>
                             {content.visitorStats.dailyAverageVisitors.toLocaleString('ko-KR')}명
                           </VisitorStatValue>
-                          <VisitorStatLabel>
-                            {content.visitorStats.period ?? '일 평균'}
-                          </VisitorStatLabel>
+                          {/* 라벨은 이 값이 "일 평균"이라는 의미를 항상 보여줘야 한다 —
+                              period로 통째로 바꿔버리면 그 의미가 사라진다. period는
+                              그 아래 각주로만 덧붙인다. */}
+                          <VisitorStatLabel>일 평균</VisitorStatLabel>
+                          {content.visitorStats.period && (
+                            <VisitorStatPeriod>{content.visitorStats.period}</VisitorStatPeriod>
+                          )}
                         </VisitorStatItem>
                       </>
                     )}
