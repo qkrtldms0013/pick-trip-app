@@ -84,8 +84,13 @@ const GENERATING_STEPS = [
 
 // 실제 생성이 이보다 먼저 끝나도(드물게 아주 빠른 응답) GeneratingProgress가
 // 마지막 단계("마무리")까지 보여줄 시간은 확보해준다 — 안 그러면 로딩 화면이
-// 중간 단계에서 뚝 끊기고 바로 완성 화면으로 넘어가 버린다.
+// 중간 단계에서 뚝 끊기고 바로 완성 화면으로 넘어가 버린다. 실제 서버 호출(1~2분)에
+// 비하면 무시할 만한 대기라 로그인 사용자 경로에만 쓴다.
 const MIN_LOADING_MS = GENERATING_STEPS.length * DEFAULT_STEP_INTERVAL_MS + 500;
+// 게스트 경로(generateItinerary)는 네트워크 호출 없이 동기적으로 즉시 끝난다 — 위
+// MIN_LOADING_MS를 그대로 쓰면 "보통 30초 정도 걸려요" 링이 매번 8초 넘게 유지되는
+// 불필요한 대기가 생긴다. 애니메이션이 어색하게 뚝 끊기지 않을 정도로만 짧게 잡는다.
+const GUEST_MIN_LOADING_MS = DEFAULT_STEP_INTERVAL_MS;
 
 // 이 화면은 네이티브 스택 헤더(RootNavigator의 headerScreenOptions)가 이미 위에 떠 있어서
 // top 세이프에어리어를 또 적용하면 헤더와 본문 사이가 붕 떠 보인다.
@@ -629,8 +634,11 @@ export function ItineraryResultScreen({
   const runGenerate = async () => {
     setStatus('loading');
     // 실제 생성이 아무리 빨리 끝나도, 진행 단계 체크리스트 애니메이션이 끝까지 재생될
-    // 시간은 확보해준다(그래야 화면이 애니메이션 도중에 뚝 끊기지 않는다).
-    const minDelay = new Promise((resolve) => setTimeout(resolve, MIN_LOADING_MS));
+    // 시간은 확보해준다(그래야 화면이 애니메이션 도중에 뚝 끊기지 않는다). 게스트는
+    // 동기 로컬 생성기라 훨씬 짧은 지연만 준다(위 GUEST_MIN_LOADING_MS 참고).
+    const minDelay = new Promise((resolve) =>
+      setTimeout(resolve, isGuest ? GUEST_MIN_LOADING_MS : MIN_LOADING_MS),
+    );
     try {
       if (isGuest) {
         // 백엔드 AI 일정 생성은 로그인이 필요하다. 게스트는 로그인 없이도 바로 일정을
@@ -741,17 +749,22 @@ export function ItineraryResultScreen({
     setSuggestions((prev) => prev.filter((s) => s !== suggestion));
   };
 
-  // 안(variant)을 바꾸면 stops가 통째로 교체되므로, 지금 stops에 없는 콘텐츠를 가리키는
-  // 제안은 걸러낸다(엉뚱한 안 기준 제안이 남아있는 걸 막는다).
-  const visibleSuggestions = suggestions.filter((s) =>
-    stops.some((stop) => stop.contentId === s.contentId),
-  );
+  // 안(variant)을 바꾸면 stops가 통째로 교체되므로, 지금 stops와 안 맞는 제안은 걸러낸다.
+  // contentId가 stops 어딘가에 있다는 것만으로는 부족하다 — swapStops는 (dayIndex,
+  // contentId, swapWithContentId) 세 개가 "같은 날"에 다 있어야 실제로 바뀐다. 예를 들어
+  // CAR 안에서 A·B가 1일차였다가 TRANSIT 안에서 B가 2일차로 옮겨가면, contentId만 보는
+  // 검사는 여전히 "보이는" 제안으로 남지만 수락해도 dayStops에서 둘 다 못 찾아 아무 일도
+  // 안 일어난다(그런데 제안 카드는 사라져서 마치 처리된 것처럼 보인다).
+  const visibleSuggestions = suggestions.filter((s) => {
+    const dayStops = stops.filter((stop) => stop.day === s.dayIndex);
+    const hasContent = dayStops.some((stop) => stop.contentId === s.contentId);
+    const hasSwapTarget =
+      s.swapWithContentId == null ||
+      dayStops.some((stop) => stop.contentId === s.swapWithContentId);
+    return hasContent && hasSwapTarget;
+  });
 
   const { contents: selectedContents } = useContentsByIds(selectedIds);
-  const titleByContentId = useMemo(
-    () => Object.fromEntries(selectedContents.map((c) => [c.id, c.name])),
-    [selectedContents],
-  );
 
   // 저장 버튼을 누르면 바로 저장하지 않고, 이름을 정할 수 있게 모달부터 띄운다.
   const handleSaveButtonPress = () => {
@@ -851,11 +864,23 @@ export function ItineraryResultScreen({
   };
 
   const { contents: regionContents } = useContents(selectedRegions);
+  // AUGMENT 모드에서 AI가 바구니 밖에서 추가한 장소(stop.addedByAi)는 selectedIds에도
+  // 없고 지역 콘텐츠 첫 페이지(regionContents)에도 없을 수 있다 — 그러면 이름·좌표를
+  // 못 찾아 스톱 이름이 비고 지도·구간 거리에서도 빠진다. stops에 실제 등장하는
+  // contentId 전부를 별도로 조회해 채운다.
+  const { contents: stopContents } = useContentsByIds(stops.map((s) => s.contentId));
   const contentById = useMemo(() => {
     const map = Object.fromEntries(regionContents.map((c) => [c.id, c]));
     for (const content of selectedContents) map[content.id] = content;
+    for (const content of stopContents) map[content.id] = content;
     return map;
-  }, [regionContents, selectedContents]);
+  }, [regionContents, selectedContents, stopContents]);
+  // 저장 시 stops의 contentId → title 매핑. selectedContents만 보면 AUGMENT로 추가된
+  // 장소(바구니 밖)는 이름을 못 찾아 title: null로 저장돼버린다 — contentById로 봐야 한다.
+  const titleByContentId = useMemo(
+    () => Object.fromEntries(stops.map((s) => [s.contentId, contentById[s.contentId]?.name ?? ''])),
+    [stops, contentById],
+  );
 
   const usedIds = stops.map((s) => s.contentId);
   const candidates = regionContents.filter((c) => !usedIds.includes(c.id));
@@ -1151,7 +1176,12 @@ export function ItineraryResultScreen({
                   <LegRow>
                     <LegLine />
                     <LegText>
-                      차로 {hopToNext.distanceKm.toFixed(1)}km
+                      {/* 구간 거리는 이동수단과 무관하게 항상 카카오 자동차 경로 조회
+                          결과다(TRANSIT용 실제 경로 데이터는 아직 없다) — "차로"라고
+                          단정하면 대중교통 안을 보는 중엔 틀린 정보가 된다. 자동차 안일
+                          때만 "차로"를 붙이고, 그 외엔 이동수단을 특정하지 않는다. */}
+                      {selectedVariant?.travelMode === 'CAR' ? '차로 ' : ''}
+                      {hopToNext.distanceKm.toFixed(1)}km
                       {hopToNext.durationMinutes != null ? ` · ${hopToNext.durationMinutes}분` : ''}
                     </LegText>
                   </LegRow>
