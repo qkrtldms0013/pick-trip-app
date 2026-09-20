@@ -6,6 +6,17 @@ export type ContentCategory =
   | 'nature'
   | 'experience';
 
+// 지역(시군구) 단위 근사치다 — 개별 장소 실측이 아니므로 항상 approximate: true.
+// totalVisitors만 있고 dailyAverageVisitors/period가 null인 경우 그 두 항목은 화면에서 숨긴다.
+export interface VisitorStats {
+  totalVisitors: number | null;
+  dailyAverageVisitors: number | null;
+  period: string | null;
+  source: string;
+  baseDate: string; // "YYYY-MM-DD"
+  approximate: true;
+}
+
 export interface Content {
   id: string;
   regionId: string;
@@ -27,4 +38,5 @@ export interface Content {
   parking: string | null;
   stayDuration: string | null;
   reservationRequired: string | null;
+  visitorStats: VisitorStats | null;
 }

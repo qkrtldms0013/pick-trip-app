@@ -1,7 +1,30 @@
 import { applyContentImageOverride } from '../constants/contentImageOverrides';
-import type { Content, ContentCategory } from '../types/content';
+import type { Content, ContentCategory, VisitorStats } from '../types/content';
 import type { NearbyContentItem, NearbyDistanceBasis } from '../types/nearbyContent';
 import { apiClient } from './apiClient';
+
+// 지역(시군구) 단위 근사치라 approximate는 항상 true로 내려온다. totalVisitors만 있고
+// dailyAverageVisitors/period가 없는 경우(집계 방식이 더 거친 지역)도 있어 전부 nullable.
+interface VisitorStatsResponse {
+  totalVisitors: number | null;
+  dailyAverageVisitors: number | null;
+  period: string | null;
+  source: string;
+  baseDate: string;
+  approximate: boolean;
+}
+
+function toVisitorStats(item: VisitorStatsResponse | null): VisitorStats | null {
+  if (!item) return null;
+  return {
+    totalVisitors: item.totalVisitors,
+    dailyAverageVisitors: item.dailyAverageVisitors,
+    period: item.period,
+    source: item.source,
+    baseDate: item.baseDate,
+    approximate: true,
+  };
+}
 
 interface ContentSummaryResponse {
   contentId: string;
@@ -15,6 +38,7 @@ interface ContentSummaryResponse {
   summary: string | null;
   indoor: boolean;
   region: string;
+  visitorStats: VisitorStatsResponse | null;
 }
 
 interface ContentListResponse {
@@ -46,6 +70,7 @@ function toContent(item: ContentSummaryResponse): Content {
     parking: null,
     stayDuration: null,
     reservationRequired: null,
+    visitorStats: toVisitorStats(item.visitorStats),
   });
 }
 
@@ -88,6 +113,7 @@ interface ContentDetailResponse {
   parking: string | null;
   stayDuration: string | null;
   reservationRequired: string | null;
+  visitorStats: VisitorStatsResponse | null;
 }
 
 function toContentFromDetail(item: ContentDetailResponse): Content {
@@ -108,6 +134,7 @@ function toContentFromDetail(item: ContentDetailResponse): Content {
     parking: item.parking,
     stayDuration: item.stayDuration,
     reservationRequired: item.reservationRequired,
+    visitorStats: toVisitorStats(item.visitorStats),
   });
 }
 
